@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>School Air — Monitor Ambiental Escolar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <script>
+    /*
+      Configuração do Tailwind CSS:
+      Extendemos o tema padrão com a paleta de cores inspirada no Material Design Dark.
+      As cores foram escolhidas seguindo as diretrizes do Material Design 3 (Material You)
+      com superfícies em tons de cinza neutro (sem o azul "TRON") e cores de destaque
+      mais suaves e acessíveis (maior contraste WCAG).
+    */
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Roboto', 'sans-serif'],
+          },
+          colors: {
+            // Superfícies baseadas na escala de cinza neutro do Material Dark
+            bg:        '#121212',   // Fundo principal (Material surface baseline)
+            surface:   '#1e1e1e',   // Superfície elevada nível 1
+            panel:     '#2c2c2c',   // Superfície elevada nível 2 (cards)
+            border:    '#3a3a3a',   // Bordas sutis
+            muted:     '#525252',   // Elementos desativados
+
+            // Texto seguindo opacidades do Material Dark
+            text:      '#e0e0e0',   // Texto primário (87% branco)
+            sub:       '#9e9e9e',   // Texto secundário (60% branco)
+
+            // Cores de destaque, tons mais suaves e acessíveis
+            accent:    '#7c9ef7',   // Azul primary (Material Blue 200)
+            green:     '#81c784',   // Verde (Material Green 300)
+            yellow:    '#ffb74d',   // Laranja/Amarelo (Material Orange 300)
+            red:       '#e57373',   // Vermelho (Material Red 300)
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /*
+      ESTILOS GLOBAIS
+      Seguimos o Material Design Dark Theme:
+      Fundo #121212 com superfícies progressivamente mais claras
+      Texto em branco com opacidade (87% primário, 60% secundário)
+      Bordas sutis em cinza neutro
+      Elevação representada por luminosidade (não por sombras pesadas)
+    */
+    :root {
+      --color-bg:      #121212;
+      --color-surface: #1e1e1e;
+      --color-panel:   #2c2c2c;
+      --color-border:  #3a3a3a;
+      --color-accent:  #7c9ef7;
+    }
+
+    html, body {
+      background-color: var(--color-bg);
+      font-family: 'Roboto', sans-serif;
+      color: #e0e0e0;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbar customizada discreta, sem chamar atenção */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--color-surface); }
+    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #666; }
+
+    /* Elevação suave no hero card estilo Material (sombra difusa) */
+    .elevation-2 {
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 8px rgba(0,0,0,0.2);
+    }
+    .elevation-3 {
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 8px 16px rgba(0,0,0,0.2);
+    }
+
+    /* Indicador colorido lateral no hero card */
+    .hero-bar { transition: background 0.5s ease; }
+
+    /* Badge pulsante de "Ao Vivo" */
+    .live-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #81c784;
+      animation: livePulse 2s infinite;
+    }
+    @keyframes livePulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(129,199,132,0.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(129,199,132,0); }
+    }
+
+    /* Animação de entrada suave para conteúdo das abas */
+    .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Card de sensor estilo Material: superfície elevada, bordas arredondadas */
+    .sensor-card {
+      background: var(--color-panel);
+      border: 1px solid var(--color-border);
+      border-radius: 16px;
+      padding: 20px 24px;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .sensor-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transform: translateY(-1px);
+    }
+
+    /* Tabela de histórico limpa e legível */
+    .data-table thead th {
+      background: var(--color-surface);
+      position: sticky; top: 0; z-index: 10;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9e9e9e;
+      padding: 12px 14px;
+      font-weight: 500;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .data-table tbody tr {
+      border-bottom: 1px solid var(--color-border);
+      transition: background 0.15s;
+    }
+    .data-table tbody tr:hover { background: rgba(255,255,255,0.04); }
+    .data-table tbody td {
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #bdbdbd;
+    }
+
+    /* Botões de navegação (abas) estilo Material tabs */
+    .nav-btn {
+      padding: 10px 24px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      transition: background 0.2s, color 0.2s;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: #9e9e9e;
+    }
+    .nav-btn.active {
+      background: rgba(124,158,247,0.12);
+      color: #7c9ef7;
+    }
+    .nav-btn:hover:not(.active) {
+      background: rgba(255,255,255,0.05);
+      color: #e0e0e0;
+    }
+
+    /* Chip de status (badge nos cards) */
+    .status-chip {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+
+  <header class="sticky top-0 z-50 border-b border-border"
+          style="background:rgba(18,18,18,0.92); backdrop-filter:blur(10px);">
+    <div class="max-w-screen-xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+             style="background: rgba(124,158,247,0.15);">
+          <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
+        </div>
+        <span class="text-lg font-medium tracking-tight">
+          School <span style="color:#7c9ef7;">Air</span>
+        </span>
+        <span class="hidden sm:block text-sub text-xs ml-2">Monitor Ambiental Escolar</span>
+      </div>
+
+      <nav class="flex items-center gap-1 p-1 rounded-xl"
+           style="background:var(--color-surface); border:1px solid var(--color-border);">
+        <button id="btn-dashboard" class="nav-btn active" onclick="showTab('dashboard')">
+          <span class="flex items-center gap-2">
+            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+            Dashboard
+          </span>
+        </button>
+        <button id="btn-historico" class="nav-btn" onclick="showTab('historico')">
+          <span class="flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4"></i>
+            Histórico
+          </span>
+        </button>
+      </nav>
+
+      <div class="flex items-center gap-2 text-xs text-sub">
+        <div class="live-dot"></div>
+        <span id="last-update-label">Aguardando dados…</span>
+      </div>
+    </div>
+  </header>
+
+
+  <main class="max-w-screen-xl mx-auto px-6 py-8">
+
+    <div id="tab-dashboard" class="animate-fade-in">
+
+      <div id="hero-card"
+           class="relative overflow-hidden rounded-2xl border border-border mb-8 elevation-3 transition-all duration-500"
+           style="background:var(--color-panel);">
+
+        <div id="hero-bar" class="hero-bar absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl"
+             style="background:#81c784;"></div>
+
+        <div class="relative px-8 py-7 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+
+          <div id="hero-icon-wrap"
+               class="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center"
+               style="background:rgba(129,199,132,0.12);">
+            <i id="hero-icon" data-lucide="check-circle" class="w-8 h-8" style="color:#81c784;"></i>
+          </div>
+
+          <div class="flex-1">
+            <p class="text-sub text-xs uppercase tracking-widest mb-1">
+              Qualidade do Ar Interno (IAQ)
+            </p>
+            <h1 id="hero-status" class="text-4xl font-bold tracking-tight mb-1"
+                style="color:#81c784;">
+              Excelente
+            </h1>
+            <p id="hero-reason" class="text-sub text-sm leading-relaxed">
+              Aguardando leitura dos sensores…
+            </p>
+          </div>
+
+          <div class="text-right flex-shrink-0">
+            <p class="text-sub text-xs">Última leitura</p>
+            <p id="hero-time" class="text-text text-sm font-medium mt-1">—</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="thermometer" class="w-5 h-5" style="color:#7c9ef7;"></i>
+            </div>
+            <span id="badge-temp" class="status-chip"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+          </div>
+          <p class="text-sub text-xs uppercase tracking-wide mb-1">Temperatura</p>
+          <p id="val-temp" class="text-3xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Ideal: 20 – 24 °C</p>
+        </div>
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="droplets" class="w-5 h-5" style="color:#7c9ef7;"></i>
+            </div>
+            <span id="badge-hum" class="status-chip"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+          </div>
+          <p class="text-sub text-xs uppercase tracking-wide mb-1">Umidade Relativa</p>
+          <p id="val-hum" class="text-3xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Ideal: 40 – 60%</p>
+        </div>
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
+            </div>
+            <span id="badge-co2" class="status-chip"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+          </div>
+          <p class="text-sub text-xs uppercase tracking-wide mb-1">Dióxido de Carbono</p>
+          <p id="val-co2" class="text-3xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Ideal: &lt;1000 ppm</p>
+        </div>
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="flask-conical" class="w-5 h-5" style="color:#7c9ef7;"></i>
+            </div>
+            <span id="badge-voc" class="status-chip"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+          </div>
+          <p class="text-sub text-xs uppercase tracking-wide mb-1">Índice VOC</p>
+          <p id="val-voc" class="text-3xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Ideal: &lt;100</p>
+        </div>
+      </div>
+
+
+      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sub text-xs uppercase tracking-wide">PM2.5 (Partículas)</p>
+            <span id="badge-pm25" class="status-chip"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+          </div>
+          <p id="val-pm25" class="text-2xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">µg/m³ — Ideal: &lt;15</p>
+        </div>
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sub text-xs uppercase tracking-wide">Índice NOx</p>
+            <span class="status-chip"
+                  style="background:rgba(124,158,247,0.1); color:#7c9ef7;">Sensor</span>
+          </div>
+          <p id="val-nox" class="text-2xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Óxidos de Nitrogênio</p>
+        </div>
+
+        <div class="sensor-card">
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sub text-xs uppercase tracking-wide">Luminosidade</p>
+            <span class="status-chip"
+                  style="background:rgba(124,158,247,0.1); color:#7c9ef7;">Lux</span>
+          </div>
+          <p id="val-luz" class="text-2xl font-bold">—</p>
+          <p class="text-sub text-xs mt-2">Nível de iluminação ambiente</p>
+        </div>
+      </div>
+    </div>
+
+
+    <div id="tab-historico" style="display:none;" class="animate-fade-in">
+
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+
+        <div class="rounded-2xl border border-border p-6 elevation-2"
+             style="background:var(--color-panel);">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="activity" class="w-4 h-4" style="color:#7c9ef7;"></i>
+            </div>
+            <div>
+              <p class="text-text text-sm font-medium">CO₂ vs Poluentes</p>
+              <p class="text-sub text-xs">CO₂ · VOC · NOx ao longo do tempo</p>
+            </div>
+          </div>
+          <canvas id="chart-co2" height="200"></canvas>
+        </div>
+
+        <div class="rounded-2xl border border-border p-6 elevation-2"
+             style="background:var(--color-panel);">
+          <div class="flex items-center gap-3 mb-6">
+            <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                 style="background:rgba(124,158,247,0.1);">
+              <i data-lucide="thermometer-sun" class="w-4 h-4" style="color:#7c9ef7;"></i>
+            </div>
+            <div>
+              <p class="text-text text-sm font-medium">Temperatura vs Umidade</p>
+              <p class="text-sub text-xs">Comparativo ambiental ao longo do tempo</p>
+            </div>
+          </div>
+          <canvas id="chart-tempum" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-border overflow-hidden elevation-2"
+           style="background:var(--color-panel);">
+
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div class="flex items-center gap-3">
+            <i data-lucide="table-2" class="w-4 h-4 text-sub"></i>
+            <p class="text-text text-sm font-medium">Registros Completos</p>
+            <span id="record-count" class="text-sub text-xs">— registros</span>
+          </div>
+          <p class="text-sub text-xs">Últimos 50 registros</p>
+        </div>
+
+        <div class="overflow-auto" style="max-height:480px;">
+          <table class="data-table w-full border-collapse">
+            <thead>
+              <tr>
+                <th>Data / Hora</th>
+                <th>Temp (°C)</th>
+                <th>Umidade (%)</th>
+                <th>CO₂ (ppm)</th>
+                <th>PM1</th>
+                <th>PM2.5</th>
+                <th>PM4</th>
+                <th>PM10</th>
+                <th>VOC</th>
+                <th>NOx</th>
+                <th>Luz (lux)</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <tr>
+                <td colspan="11" class="text-center py-10 text-sub text-sm">
+                  Aguardando dados da API…
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+
+  <footer class="border-t border-border mt-12 py-6 px-6">
+    <div class="max-w-screen-xl mx-auto flex items-center justify-between text-sub text-xs">
+      <span>School Air · Monitor Ambiental IoT Escolar</span>
+      <span>Atualiza a cada 10 segundos · API: /api/dados</span>
+    </div>
+  </footer>
+
+
+  <script>
+    /*
+      INICIALIZAÇÃO DOS ÍCONES LUCIDE
+      O Lucide carrega como uma biblioteca global via CDN.
+      Precisamos chamar lucide.createIcons() depois que o DOM estiver
+      pronto, para converter as tags <i data-lucide="nome"> em SVGs.
+    */
+    lucide.createIcons();
+
+
+    /*
+      VARIÁVEIS GLOBAIS DE ESTADO
+      Armazenamos os dados recebidos da API para poder reutilizá-los
+      ao trocar de aba sem precisar fazer uma nova requisição HTTP.
+    */
+    let allData = [];         // Array completo de leituras retornado pela API
+    let chartCO2 = null;      // Referência ao gráfico Chart.js de CO₂/VOC/NOx
+    let chartTempUm = null;   // Referência ao gráfico Chart.js de Temp/Umidade
+
+
+    /*
+      FUNÇÃO: showTab(tabName)
+      PROPÓSITO: Alterna a visibilidade entre as abas "dashboard" e "historico".
+      COMO FUNCIONA:
+        1. Esconde ambas as abas (display:none)
+        2. Remove a classe "active" de todos os botões de navegação
+        3. Exibe apenas a aba solicitada (display:block)
+        4. Adiciona a classe "active" no botão correspondente
+        5. Se a aba "historico" foi selecionada e já existem dados,
+           atualiza os gráficos — necessário porque o Chart.js não
+           renderiza corretamente em elementos ocultos (display:none).
+    */
+    function showTab(tabName) {
+      document.getElementById('tab-dashboard').style.display = 'none';
+      document.getElementById('tab-historico').style.display  = 'none';
+
+      document.getElementById('btn-dashboard').classList.remove('active');
+      document.getElementById('btn-historico').classList.remove('active');
+
+      document.getElementById('tab-' + tabName).style.display = 'block';
+
+      document.getElementById('btn-' + tabName).classList.add('active');
+
+      if (tabName === 'historico' && allData.length > 0) {
+        updateCharts(allData);
+        updateTable(allData);
+      }
+    }
+
+
+    /*
+      FUNÇÕES DE CLASSIFICAÇÃO DE STATUS
+      Cada função recebe um valor numérico de um sensor e retorna
+      uma string indicando o nível de qualidade:
+        'excelente' — dentro da faixa ideal
+        'atencao'   — fora do ideal mas não perigoso
+        'critico'   — nível prejudicial à saúde/cognição
+      Os limites foram definidos com base em: ASHRAE 62.1 (ventilação), OMS e Sensirion SEN5x.
+    */
+
+    // Classifica CO₂ em ppm. < 1000: ar renovado; 1000-1500: atenção; > 1500: sonolência marcante.
+    function classCO2(v) {
+      if (v < 1000) return 'excelente';
+      if (v <= 1500) return 'atencao';
+      return 'critico';
+    }
+
+    // Classifica temperatura em °C. 20-24°C: conforto térmico (ASHRAE 55).
+    function classTemp(v) {
+      if (v >= 20 && v <= 24) return 'excelente';
+      if ((v >= 18 && v < 20) || (v > 24 && v <= 26)) return 'atencao';
+      return 'critico';
+    }
+
+    // Classifica umidade relativa em %. 40-60%: faixa ideal.
+    function classHum(v) {
+      if (v >= 40 && v <= 60) return 'excelente';
+      if ((v >= 30 && v < 40) || (v > 60 && v <= 70)) return 'atencao';
+      return 'critico';
+    }
+
+    // Classifica PM2.5 em µg/m³. < 15: excelente (OMS recomenda média de 15 µg/m³ em 24h).
+    function classPM25(v) {
+      if (v < 15) return 'excelente';
+      if (v <= 35) return 'atencao';
+      return 'critico';
+    }
+
+    // Classifica índice VOC (Compostos Orgânicos Voláteis). < 100: ar limpo; 100-200: moderado.
+    function classVOC(v) {
+      if (v < 100) return 'excelente';
+      if (v <= 200) return 'atencao';
+      return 'critico';
+    }
+
+
+    /*
+      MAPEAMENTO DE STATUS → ESTILOS VISUAIS
+      Objeto centralizado que define propriedades visuais para cada nível de status.
+      Isso facilita manutenção: para mudar a cor do "Atenção", basta editar aqui.
+      Cores seguem a paleta Material Design 300: Verde (#81c784), Laranja (#ffb74d), Vermelho (#e57373).
+    */
+    const STATUS_STYLES = {
+      excelente: {
+        color:      '#81c784',                    // Cor do texto/ícone
+        bgColor:    'rgba(129,199,132,0.12)',     // Fundo do ícone do hero
+        barColor:   '#81c784',                    // Barra lateral do hero
+        label:      'Excelente',                  // Texto exibido no hero
+        icon:       'check-circle',               // Nome do ícone Lucide
+        badgeBg:    'rgba(129,199,132,0.12)',     // Fundo do chip de status
+        badgeColor: '#81c784',                    // Cor do texto do chip
+        badgeText:  'Ótimo',                      // Texto exibido no chip
+      },
+      atencao: {
+        color:      '#ffb74d',
+        bgColor:    'rgba(255,183,77,0.12)',
+        barColor:   '#ffb74d',
+        label:      'Atenção',
+        icon:       'alert-triangle',
+        badgeBg:    'rgba(255,183,77,0.12)',
+        badgeColor: '#ffb74d',
+        badgeText:  'Atenção',
+      },
+      critico: {
+        color:      '#e57373',
+        bgColor:    'rgba(229,115,115,0.12)',
+        barColor:   '#e57373',
+        label:      'Crítica / Prejudicial',
+        icon:       'shield-alert',
+        badgeBg:    'rgba(229,115,115,0.12)',
+        badgeColor: '#e57373',
+        badgeText:  'Crítico',
+      },
+    };
+
+    // Atalho para acessar os estilos de um status. Retorna 'excelente' como fallback.
+    function getStyle(status) {
+      return STATUS_STYLES[status] || STATUS_STYLES.excelente;
+    }
+
+    // Atualiza o visual de um chip de status (os badges coloridos nos cards).
+    function setBadge(id, status) {
+      const el = document.getElementById(id);
+      const s  = getStyle(status);
+      el.style.background = s.badgeBg;
+      el.style.color      = s.badgeColor;
+      el.textContent      = s.badgeText;
+    }
+
+
+    /*
+      FUNÇÃO: calcIAQ(data)
+      PROPÓSITO: Calcula o status geral de qualidade do ar (IAQ) a partir de uma leitura.
+      RETORNA: { status, reason }
+      LÓGICA (Regra do Pior Caso):
+        1. Se QUALQUER parâmetro for 'critico' → status geral = 'critico'
+        2. Se nenhum for crítico, mas algum for 'atencao' → 'atencao'
+        3. Se todos forem 'excelente' → 'excelente'
+    */
+    function calcIAQ(data) {
+      const params = [
+        { name: 'CO₂',         status: classCO2(data.co2),          val: `${data.co2} ppm`,                threshold: 'limite > 1500 ppm' },
+        { name: 'Temperatura', status: classTemp(data.temperatura), val: `${data.temperatura.toFixed(1)} °C`, threshold: 'fora da faixa 20–24 °C' },
+        { name: 'Umidade',     status: classHum(data.umidade),      val: `${data.umidade.toFixed(1)}%`,     threshold: 'fora da faixa 40–60%' },
+        { name: 'PM2.5',       status: classPM25(data.pm25),        val: `${data.pm25} µg/m³`,             threshold: 'acima de 35 µg/m³' },
+        { name: 'VOC',         status: classVOC(data.voc),          val: `${data.voc}`,                    threshold: 'índice acima de 200' },
+      ];
+
+      const criticalParam = params.find(p => p.status === 'critico');
+      if (criticalParam) {
+        return {
+          status: 'critico',
+          reason: `${criticalParam.name} (${criticalParam.val}) está acima do limite seguro — ${criticalParam.threshold}. Risco à saúde e ao desempenho cognitivo.`,
+        };
+      }
+
+      const warnParam = params.find(p => p.status === 'atencao');
+      if (warnParam) {
+        return {
+          status: 'atencao',
+          reason: `${warnParam.name} (${warnParam.val}) está fora da faixa ideal — atenção recomendada.`,
+        };
+      }
+
+      return {
+        status: 'excelente',
+        reason: 'Todos os parâmetros dentro da normalidade. Ambiente favorável ao aprendizado.',
+      };
+    }
+
+
+    /*
+      FUNÇÃO: updateDashboard(data)
+      PROPÓSITO: Atualiza a interface da aba Dashboard com a última leitura.
+      O QUE FAZ: Calcula o status IAQ, atualiza Hero Card, valores dos cards secundários e renderiza ícones.
+    */
+    function updateDashboard(data) {
+      const iaq   = calcIAQ(data);
+      const style = getStyle(iaq.status);
+
+      document.getElementById('hero-bar').style.background = style.barColor;
+
+      const heroIconWrap = document.getElementById('hero-icon-wrap');
+      heroIconWrap.style.background = style.bgColor;
+
+      const heroIcon = document.getElementById('hero-icon');
+      heroIcon.setAttribute('data-lucide', style.icon);
+      heroIcon.style.color = style.color;
+
+      const heroStatus = document.getElementById('hero-status');
+      heroStatus.textContent = style.label;
+      heroStatus.style.color = style.color;
+
+      document.getElementById('hero-reason').textContent = iaq.reason;
+
+      const dt = new Date(data.data);
+      document.getElementById('hero-time').textContent =
+        dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      document.getElementById('val-temp').textContent  = data.temperatura.toFixed(1) + ' °C';
+      document.getElementById('val-hum').textContent   = data.umidade.toFixed(1) + '%';
+      document.getElementById('val-co2').textContent   = data.co2 + ' ppm';
+      document.getElementById('val-voc').textContent   = data.voc;
+      document.getElementById('val-pm25').textContent  = data.pm25 + ' µg/m³';
+      document.getElementById('val-nox').textContent   = data.nox;
+      document.getElementById('val-luz').textContent   = data.luz + ' lx';
+
+      setBadge('badge-temp', classTemp(data.temperatura));
+      setBadge('badge-hum',  classHum(data.umidade));
+      setBadge('badge-co2',  classCO2(data.co2));
+      setBadge('badge-voc',  classVOC(data.voc));
+      setBadge('badge-pm25', classPM25(data.pm25));
+
+      // Re-renderiza os ícones porque o ícone do hero pode ter mudado
+      lucide.createIcons();
+    }
+
+
+    /*
+      FUNÇÃO: updateCharts(data)
+      PROPÓSITO: Cria ou atualiza os dois gráficos Chart.js na aba Histórico.
+      ESTRATÉGIA: Usa últimas 30 leituras invertidas para cronologia. Na primeira execução cria o Chart,
+      nas seguintes apenas injeta os dados e atualiza para não prejudicar performance.
+    */
+    function updateCharts(data) {
+      const slice  = data.slice(0, 30).reverse();
+
+      const labels = slice.map(d => {
+        const dt = new Date(d.data);
+        return dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      });
+
+      const co2Data  = slice.map(d => d.co2);
+      const vocData  = slice.map(d => d.voc);
+      const noxData  = slice.map(d => d.nox);
+      const tempData = slice.map(d => d.temperatura);
+      const humData  = slice.map(d => d.umidade);
+
+      // GRÁFICO 1: CO₂ vs Poluentes (VOC, NOx)
+      if (!chartCO2) {
+        const ctx = document.getElementById('chart-co2').getContext('2d');
+        chartCO2 = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label:           'CO₂ (ppm)',
+                data:            co2Data,
+                borderColor:     '#7c9ef7',       // Azul Material
+                backgroundColor: 'rgba(124,158,247,0.08)',
+                tension:         0.4,             // Curvatura suave
+                fill:            true,            // Preenchimento abaixo da linha
+                pointRadius:     3,
+                pointBackgroundColor: '#7c9ef7',
+              },
+              {
+                label:           'VOC (índice)',
+                data:            vocData,
+                borderColor:     '#ffb74d',       // Laranja Material
+                backgroundColor: 'rgba(255,183,77,0.06)',
+                tension:         0.4,
+                fill:            false,
+                pointRadius:     3,
+                pointBackgroundColor: '#ffb74d',
+              },
+              {
+                label:           'NOx (índice)',
+                data:            noxData,
+                borderColor:     '#e57373',       // Vermelho Material
+                backgroundColor: 'rgba(229,115,115,0.06)',
+                tension:         0.4,
+                fill:            false,
+                pointRadius:     3,
+                pointBackgroundColor: '#e57373',
+              },
+            ],
+          },
+          options: chartOptions('Concentração / Índice'),
+        });
+      } else {
+        chartCO2.data.labels            = labels;
+        chartCO2.data.datasets[0].data = co2Data;
+        chartCO2.data.datasets[1].data = vocData;
+        chartCO2.data.datasets[2].data = noxData;
+        chartCO2.update();
+      }
+
+      // GRÁFICO 2: Temperatura vs Umidade (dois eixos Y)
+      if (!chartTempUm) {
+        const ctx2 = document.getElementById('chart-tempum').getContext('2d');
+        chartTempUm = new Chart(ctx2, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label:           'Temperatura (°C)',
+                data:            tempData,
+                borderColor:     '#e57373',
+                backgroundColor: 'rgba(229,115,115,0.08)',
+                tension:         0.4,
+                fill:            true,
+                pointRadius:     3,
+                pointBackgroundColor: '#e57373',
+                yAxisID:         'yTemp',
+              },
+              {
+                label:           'Umidade (%)',
+                data:            humData,
+                borderColor:     '#81c784',
+                backgroundColor: 'rgba(129,199,132,0.06)',
+                tension:         0.4,
+                fill:            false,
+                pointRadius:     3,
+                pointBackgroundColor: '#81c784',
+                yAxisID:         'yHum',
+              },
+            ],
+          },
+          options: chartOptionsDualAxis(),
+        });
+      } else {
+        chartTempUm.data.labels            = labels;
+        chartTempUm.data.datasets[0].data = tempData;
+        chartTempUm.data.datasets[1].data = humData;
+        chartTempUm.update();
+      }
+    }
+
+
+    /*
+      Retorna opções padrão de estilo para gráficos de eixo Y único.
+      Cores neutras de grid e texto, compatíveis com o tema escuro Material.
+    */
+    function chartOptions(yLabel) {
+      return {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: {
+              color: '#9e9e9e',
+              font: { family: 'Roboto', size: 12 },
+              boxWidth: 14,
+              padding: 16,
+            },
+          },
+          tooltip: {
+            backgroundColor: '#2c2c2c',
+            borderColor: '#3a3a3a',
+            borderWidth: 1,
+            titleColor: '#e0e0e0',
+            bodyColor: '#bdbdbd',
+            titleFont: { family: 'Roboto', size: 13, weight: '500' },
+            bodyFont: { family: 'Roboto', size: 12 },
+            cornerRadius: 8,
+            padding: 12,
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#9e9e9e', font: { family: 'Roboto', size: 11 }, maxRotation: 45 },
+            grid:  { color: 'rgba(255,255,255,0.05)' },
+            border: { color: '#3a3a3a' },
+          },
+          y: {
+            ticks: { color: '#9e9e9e', font: { family: 'Roboto', size: 11 } },
+            grid:  { color: 'rgba(255,255,255,0.05)' },
+            border: { color: '#3a3a3a' },
+            title: { display: true, text: yLabel, color: '#9e9e9e', font: { family: 'Roboto', size: 12 } },
+          },
+        },
+      };
+    }
+
+
+    /*
+      Retorna opções para o gráfico com dois eixos Y (Temperatura + Umidade).
+      Eixo esquerdo: Temperatura (vermelho) / Eixo direito: Umidade (verde).
+    */
+    function chartOptionsDualAxis() {
+      return {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: {
+              color: '#9e9e9e',
+              font: { family: 'Roboto', size: 12 },
+              boxWidth: 14,
+              padding: 16,
+            },
+          },
+          tooltip: {
+            backgroundColor: '#2c2c2c',
+            borderColor: '#3a3a3a',
+            borderWidth: 1,
+            titleColor: '#e0e0e0',
+            bodyColor: '#bdbdbd',
+            titleFont: { family: 'Roboto', size: 13, weight: '500' },
+            bodyFont: { family: 'Roboto', size: 12 },
+            cornerRadius: 8,
+            padding: 12,
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#9e9e9e', font: { family: 'Roboto', size: 11 }, maxRotation: 45 },
+            grid:  { color: 'rgba(255,255,255,0.05)' },
+            border: { color: '#3a3a3a' },
+          },
+          yTemp: {
+            type: 'linear',
+            position: 'left',
+            ticks: { color: '#e57373', font: { family: 'Roboto', size: 11 } },
+            grid:  { color: 'rgba(255,255,255,0.05)' },
+            border: { color: '#e57373' },
+            title: { display: true, text: 'Temperatura (°C)', color: '#e57373', font: { family: 'Roboto', size: 12 } },
+          },
+          yHum: {
+            type: 'linear',
+            position: 'right',
+            ticks: { color: '#81c784', font: { family: 'Roboto', size: 11 } },
+            grid:  { drawOnChartArea: false },  // Evita linhas de grid sobrepostas
+            border: { color: '#81c784' },
+            title: { display: true, text: 'Umidade (%)', color: '#81c784', font: { family: 'Roboto', size: 12 } },
+          },
+        },
+      };
+    }
+
+
+    /*
+      FUNÇÃO: updateTable(data)
+      PROPÓSITO: Preenche a tabela de histórico com os últimos 50 registros.
+      Limita o tamanho e aplica cor condicional no valor de CO₂ para fácil visualização do status.
+    */
+    function updateTable(data) {
+      const slice = data.slice(0, 50);
+      const tbody = document.getElementById('table-body');
+
+      document.getElementById('record-count').textContent = `${slice.length} registros`;
+
+      tbody.innerHTML = slice.map(d => {
+        const dt = new Date(d.data);
+        const dateStr = dt.toLocaleDateString('pt-BR') + ' ' +
+                        dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        const co2Style = classCO2(d.co2) === 'critico' ? 'style="color:#e57373;"' :
+                         classCO2(d.co2) === 'atencao' ? 'style="color:#ffb74d;"' : '';
+
+        return `
+          <tr>
+            <td>${dateStr}</td>
+            <td>${d.temperatura.toFixed(1)}</td>
+            <td>${d.umidade.toFixed(1)}</td>
+            <td ${co2Style}>${d.co2}</td>
+            <td>${d.pm1}</td>
+            <td>${d.pm25}</td>
+            <td>${d.pm4}</td>
+            <td>${d.pm10}</td>
+            <td>${d.voc}</td>
+            <td>${d.nox}</td>
+            <td>${d.luz}</td>
+          </tr>`;
+      }).join('');
+    }
+
+
+    /*
+      FUNÇÃO: fetchData()
+      PROPÓSITO: Consome a API unificada e atualiza os componentes da tela de acordo com a aba visível.
+      Evita reconstrução de gráficos caso o usuário esteja no Dashboard para poupar processamento.
+    */
+    async function fetchData() {
+      try {
+        const response = await fetch('/api/dados');
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error('API retornou dados vazios ou no formato incorreto.');
+        }
+
+        allData = data;
+
+        updateDashboard(data[0]);
+
+        const isHistoricoVisible =
+          document.getElementById('tab-historico').style.display !== 'none';
+        if (isHistoricoVisible) {
+          updateCharts(data);
+          updateTable(data);
+        }
+
+        const now = new Date();
+        document.getElementById('last-update-label').textContent =
+          'Atualizado às ' +
+          now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      } catch (error) {
+        console.error('[School Air] Erro ao buscar dados da API:', error);
+        document.getElementById('last-update-label').textContent = 'Falha na conexão';
+      }
+    }
+
+
+    /*
+      INICIALIZAÇÃO DA APLICAÇÃO
+      Busca imediata dos dados ao carregar a página, e depois repete a cada 10 segundos.
+    */
+    fetchData();
+    setInterval(fetchData, 10000);
+  </script>
+</body>
+</html>
