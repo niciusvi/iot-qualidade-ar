@@ -26,7 +26,28 @@ O sistema opera em três camadas principais:
 * **Chart.js:** Renderização dos gráficos de histórico ambiental em tempo real.
 * **Vercel:** Hospedagem gratuita da aplicação web e da API.
 
+## 🏢 Arquitetura Multi-Salas (Scale-out)
 
+Este sistema foi projetado para escalar o monitoramento ambiental para até **10 ambientes simultâneos**, gerenciados através de um único painel centralizado.
+
+### Estrutura da API
+O tráfego de rede é segmentado para evitar gargalos e perdas de pacotes. Na pasta `/api`, existem endpoints dedicados para cada ambiente (de `sala1.js` a `sala10.js`). Cada rota gerencia sua própria fila de memória volátil (Serverless), retendo de forma independente os registros de sua respectiva sala.
+
+### Funcionamento do ESP32
+O firmware do microcontrolador possui dois modos de operação que alteram dinamicamente a topologia de envio de dados, configurados no início do arquivo `.ino`:
+
+* **Modo Produção (`MODO_SIMULACAO = false`):** 
+  O firmware atua de forma dedicada. O desenvolvedor deve definir a variável `SALA_PERTENCENTE` (ex: `3`). O ESP32 fará a leitura física dos sensores I2C/Analógicos e enviará o payload via POST *exclusivamente* para o endpoint da sua sala correspondente (`/api/sala3`). Requer um hardware ESP32 + sensores por sala.
+
+* **Modo Simulação (`MODO_SIMULACAO = true`):** 
+  Útil para testes de carga e validação da interface web sem a necessidade de múltiplos hardwares. Neste modo, a variável `SALA_PERTENCENTE` é ignorada. Um único ESP32 atua como um gerador de dados mestre, iterando de 1 a 10, gerando parâmetros ambientais pseudo-aleatórios e disparando POSTs sucessivos para todas as rotas da API em um mesmo ciclo.
+
+### Interface Gráfica (Frontend)
+O painel gerencia a exibição paralela das informações em duas visualizações principais:
+1. **Visão Geral:** Um mosaico simplificado que fornece o status em tempo real do nível de IAQ (Qualidade do Ar Interno) de todas as 10 salas simultaneamente, permitindo identificar focos de poluição rapidamente pelas cores indicativas.
+2. **Dashboard Detalhado:** Ao selecionar uma sala específica no menu suspenso, a interface altera o contexto e exibe as métricas absolutas (Temperatura, Umidade, CO₂, VOC, PMs, NOx) e o histórico de gráficos referidos apenas ao ambiente isolado.
+
+   
 # Ligação dos Sensores SEN5x e SCD4x ao ESP32
 
 ## Esquema de Conexões I2C
