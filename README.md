@@ -64,10 +64,11 @@ Com as novas rotas de API criadas, você só precisa informar ao painel HTML qua
 * Abra o arquivo `public/index.html` (ou onde estiver seu Frontend).
 * Vá até a seção de variáveis globais do JavaScript e altere a constante `TOTAL_SALAS` para o novo número total:
   ```javascript
-  const TOTAL_SALAS = 15; // Exemplo para 15 salas
-
-  
-  const SALA_NOMES = [
+  const TOTAL_SALAS = 15; // Exemplo para 15 salas 
+  ```
+Logo abaixo, atualize o array SALA_NOMES adicionando ou removendo as linhas conforme a necessidade:
+```javascript
+const SALA_NOMES = [
   '', // índice 0 — não usado
   'Sala 1',
   'Sala 2',
@@ -75,7 +76,7 @@ Com as novas rotas de API criadas, você só precisa informar ao painel HTML qua
   'Laboratório',
   'Biblioteca'
 ];
-
+```
 
 # Ligação dos Sensores SEN5x e SCD4x ao ESP32
 
