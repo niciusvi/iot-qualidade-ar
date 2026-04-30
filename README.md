@@ -47,7 +47,36 @@ O painel gerencia a exibição paralela das informações em duas visualizaçõe
 1. **Visão Geral:** Um mosaico simplificado que fornece o status em tempo real do nível de IAQ (Qualidade do Ar Interno) de todas as 10 salas simultaneamente, permitindo identificar focos de poluição rapidamente pelas cores indicativas.
 2. **Dashboard Detalhado:** Ao selecionar uma sala específica no menu suspenso, a interface altera o contexto e exibe as métricas absolutas (Temperatura, Umidade, CO₂, VOC, PMs, NOx) e o histórico de gráficos referidos apenas ao ambiente isolado.
 
-   
+## ⚙️ Como Adicionar ou Remover Salas (Escalabilidade)
+
+O projeto foi construído para ser facilmente escalável. Se você precisar monitorar mais ou menos do que 10 salas, basta seguir estes dois passos simples para atualizar o Backend e o Frontend:
+
+### 1. Atualizando o Backend (Vercel)
+A arquitetura utiliza arquivos isolados para cada ambiente. Para adicionar uma nova sala, você não precisa escrever código novo:
+* Navegue até a pasta `/api`.
+* Faça uma cópia exata de qualquer arquivo existente (ex: `sala1.js`).
+* Renomeie o novo arquivo com o número da nova sala (ex: `sala11.js`).
+* **Nota:** Não é necessário alterar absolutamente nada dentro do código do novo arquivo. A Vercel criará automaticamente a nova rota (`/api/sala11`) e alocará um container de memória isolado para ela.
+* Para **remover** uma sala, basta deletar o arquivo `.js` correspondente da pasta.
+
+### 2. Atualizando o Frontend (Interface)
+Com as novas rotas de API criadas, você só precisa informar ao painel HTML quantas salas existem e quais são os nomes delas:
+* Abra o arquivo `public/index.html` (ou onde estiver seu Frontend).
+* Vá até a seção de variáveis globais do JavaScript e altere a constante `TOTAL_SALAS` para o novo número total:
+  ```javascript
+  const TOTAL_SALAS = 15; // Exemplo para 15 salas
+
+  
+  const SALA_NOMES = [
+  '', // índice 0 — não usado
+  'Sala 1',
+  'Sala 2',
+  // ... continue até o número total
+  'Laboratório',
+  'Biblioteca'
+];
+
+
 # Ligação dos Sensores SEN5x e SCD4x ao ESP32
 
 ## Esquema de Conexões I2C
