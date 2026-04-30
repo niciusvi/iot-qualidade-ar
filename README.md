@@ -19,6 +19,36 @@ O sistema opera em três camadas principais:
 * **Sensor de Gás Carbônico - Sensirion SCD4x (I2C):** Focado na detecção de Dióxido de Carbono utilizando princípio fotoacústico NDIR (medido em ppm), um indicador chave para a necessidade de renovação de ar na sala de aula.
 * **Sensor de Luminosidade - LDR (Analógico):** Acoplado a um divisor de tensão, afere os níveis de luz no ambiente escolar.
 
+## 🌬️ Parâmetros Medidos e seus Impactos na Saúde
+
+Para garantir um ambiente de aprendizado saudável e produtivo, monitoramos indicadores críticos de Qualidade do Ar Interno (IAQ). Entenda o que cada sensor mede e como esses fatores afetam o corpo humano:
+
+* **Dióxido de Carbono (CO₂):**
+  * **O que é:** Gás naturalmente exalado pela respiração humana. Em salas de aula fechadas com muitos alunos, acumula-se rapidamente.
+  * **Impacto:** Níveis elevados (acima de 1000-1500 ppm) causam sonolência, letargia, dores de cabeça e uma **queda drástica na capacidade de concentração e cognição**. É o principal indicador de que a sala precisa de ventilação imediata (abrir janelas/portas).
+
+* **Material Particulado (PM1.0, PM2.5, PM4.0, PM10):**
+  * **O que é:** Partículas microscópicas suspensas no ar (poeira, pólen, poluição externa, fumaça). O número indica o tamanho máximo da partícula em micrômetros.
+  * **Impacto:** Partículas maiores (PM10) causam irritação nos olhos, nariz e garganta, além de desencadear crises de asma e rinite. Partículas ultrafinas (PM2.5 e PM1.0) são ainda mais perigosas, pois conseguem penetrar profundamente nos pulmões e atingir a corrente sanguínea, causando inflamações sistêmicas.
+
+* **Índice VOC (Compostos Orgânicos Voláteis):**
+  * **O que é:** Gases emitidos por produtos químicos comuns no ambiente escolar, como materiais de limpeza, desinfetantes, tintas, ceras de piso, colas e canetões de quadro branco.
+  * **Impacto:** A exposição causa irritação nas vias respiratórias, ardência nos olhos, dores de cabeça, tonturas e náuseas. Ambientes crônicos com alto índice de VOC afetam severamente o conforto olfativo e a saúde a longo prazo.
+
+* **Índice NOx (Óxidos de Nitrogênio):**
+  * **O que é:** Gases poluentes altamente reativos, originados principalmente pela queima de combustíveis (ex: fumaça do escapamento de veículos no trânsito externo que entra na escola).
+  * **Impacto:** Agem como fortes irritantes do sistema respiratório. A exposição contínua pode causar tosse, falta de ar e agravar doenças respiratórias crônicas.
+
+* **Temperatura e Umidade Relativa:**
+  * **O que é:** Os dois pilares do conforto térmico do ambiente.
+  * **Impacto:** 
+    * **Umidade:** Quando muito alta (>60%), favorece a proliferação de mofo, fungos e ácaros. Quando muito baixa (<40%), resseca as vias aéreas e os olhos, além de aumentar a sobrevida de alguns vírus respiratórios suspensos no ar.
+    * **Temperatura:** Temperaturas muito fora da faixa de conforto (20-24°C) desviam a energia do corpo para a termorregulação, causando inquietação ou sonolência extrema.
+
+* **Luminosidade (Lux):**
+  * **O que é:** A quantidade e intensidade de luz visível incidente no ambiente de estudo.
+  * **Impacto:** A iluminação deficiente exige maior esforço visual, causando fadiga ocular e cansaço mental. Uma boa iluminação (especialmente a natural) inibe a produção de melatonina, regulando o relógio biológico e mantendo os alunos em estado de alerta e engajamento.
+    
 ## 💻 Tecnologias Utilizadas
 * **C++ / Arduino IDE:** Programação do firmware do ESP32.
 * **JavaScript / Node.js:** Estruturação das rotas de API serverless.
