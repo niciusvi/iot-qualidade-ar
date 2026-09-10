@@ -81,6 +81,11 @@ services:
       EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-escola}
       ALERTA_NUMEROS: ${ALERTA_NUMEROS:-}
       DASHBOARD_URL: ${DASHBOARD_URL:-}
+      # --- Portal (Fase 3) ---
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      ADMIN_USUARIO: ${ADMIN_USUARIO:-admin}
+      ADMIN_SENHA: ${ADMIN_SENHA:-}
+      PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:

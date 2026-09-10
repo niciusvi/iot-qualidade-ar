@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS alertas (
 
 CREATE INDEX IF NOT EXISTS idx_alertas_sala_data
   ON alertas (sala, enviado_em DESC);
+
+-- Fase 3: contas de acesso ao portal (perfis: visualizacao | analise | admin)
+CREATE TABLE IF NOT EXISTS usuarios (
+  id         SERIAL PRIMARY KEY,
+  nome       TEXT NOT NULL,
+  usuario    TEXT NOT NULL UNIQUE,
+  senha_hash TEXT NOT NULL,
+  perfil     TEXT NOT NULL DEFAULT 'visualizacao',
+  ativo      BOOLEAN NOT NULL DEFAULT TRUE,
+  criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `;
 
 /** Seed: as 10 salas iniciais (mesmos nomes do frontend). */
