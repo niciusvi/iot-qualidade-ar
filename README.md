@@ -1,5 +1,7 @@
 # Monitoramento Ambiental IoT - Evasão Escolar
 
+> ⚠️ **v2 em andamento:** o backend serverless descrito em partes deste README foi substituído na **Fase 1** por uma stack Docker (backend Express + PostgreSQL). Veja as seções **Roadmap v2** e **Executando a v2** abaixo. O código v1 completo está preservado na tag [`v1-serverless`](../../tree/v1-serverless).
+
 Projeto Integrador desenvolvido para a Univesp, focado em monitorar a Qualidade do Ar Interno (IAQ) em ambientes escolares e analisar a sua correlação com o bem-estar, desempenho cognitivo e índices de evasão dos alunos.
 
 ## 🛠️ Arquitetura do Sistema
@@ -296,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status: em desenvolvimento.** As seções acima descrevem o sistema **atual (v1)**. Esta seção documenta o que está aprovado e será implementado na v2.
+> **Status:** Fase 1 (banco de dados + histórico + stack Docker) **implementada em 02/09/2026**. As demais fases seguem em desenvolvimento. As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -417,3 +419,60 @@ volumes:
 **Exposição pública do backend residencial:** recomendado **Cloudflare Tunnel** (gratuito, HTTPS automático, sem abrir portas no roteador) → ex.: `https://api.seu-dominio.com`. É essa URL que o ESP32 (POST) e o frontend na Vercel (rewrite) usarão. Alternativa: port-forward + Nginx Proxy Manager + DDNS.
 
 **Portabilidade para ACA/ECS:** o backend é *stateless* (todo estado no Postgres) e configurado 100% por variáveis de ambiente (12-factor). Para migrar, sobe-se a mesma imagem no ACA/ECS e troca-se apenas a `DATABASE_URL` para um Postgres gerenciado (Azure Database / RDS).
+
+---
+
+## ▶️ Executando a v2 (Fase 1 implementada)
+
+Estrutura atual do repositório:
+
+```
+backend/            → API Node.js (Express) + Dockerfile
+frontend/           → dashboard (index.html) + nginx.conf + Dockerfile + vercel.json
+esp32/              → firmware (INALTERADO — mesma rota /api/salaN e mesmo payload)
+docker-compose.yml  → PostgreSQL + backend + frontend (+ Evolution API na Fase 2)
+docs/               → plano de ação
+```
+
+### Rodando com Docker (local ou Portainer)
+
+```bash
+cp .env.example .env   # edite pelo menos DB_PASSWORD
+docker compose up -d --build
+
+# Dashboard : http://localhost:8080
+# API       : http://localhost:3000/api/status
+```
+
+No **Portainer**: *Stacks → Add stack → Repository* → URL deste repositório + caminho `docker-compose.yml` → defina as variáveis de ambiente → *Deploy*. O volume `pgdata` mantém o banco entre atualizações da stack. O Postgres **não publica porta no host** (fica só na rede interna da stack), então não conflita com outros bancos do servidor.
+
+### Endpoints da API (Fase 1)
+
+| Método | Rota | Uso |
+|---|---|---|
+| POST | `/api/sala<N>` | Ingestão do ESP32 (idêntico à v1 — firmware não muda) |
+| GET | `/api/sala<N>?limit=360` | Últimas leituras, mais recente primeiro (dashboard) |
+| GET | `/api/salas` | Lista de salas + timestamp da última leitura |
+| GET | `/api/historico?sala=3&inicio=2026-09-01&fim=2026-09-07` | Leituras brutas por período (ordem cronológica) |
+| GET | `/api/agregado?sala=3&inicio=&fim=&intervalo=hora\|dia` | Média/mín/máx por hora ou dia |
+| GET | `/api/status` | Healthcheck |
+
+Retenção: leituras brutas ficam `RETENCAO_DIAS` (padrão 90) dias; um job interno consolida tudo em `agregados_hora` (médias por hora, mantidas para sempre) antes de apagar.
+
+### Aba Histórico do dashboard
+
+A aba **Histórico** agora tem um painel *"Consultar período no banco de dados"*: sala + data início/fim + resolução (brutas / média por hora / média por dia), com **Exportar CSV** (formato Excel pt-BR) e botão para voltar ao tempo real.
+
+### ESP32
+
+Nada muda no firmware além da constante `BASE_URL`, que deve apontar para a URL pública do backend (ex.: `https://api.seu-dominio.com/api/sala` via Cloudflare Tunnel) em vez da Vercel.
+
+### Vercel (frontend estático)
+
+1. No projeto da Vercel, defina **Root Directory = `frontend/`**.
+2. Edite `frontend/vercel.json` trocando `SEU-BACKEND-PUBLICO.exemplo.com` pela URL pública do backend — o rewrite de `/api/*` faz o dashboard funcionar sem nenhuma alteração de código.
+
+### Migração v1 → v2
+
+- As funções serverless (`api/salaN.js`) e o `public/` foram removidos; o código v1 completo está na tag **`v1-serverless`**.
+- Não há dados a migrar: a v1 não tinha persistência (memória volátil).
