@@ -133,6 +133,8 @@ WebServer server(80);
 Preferences prefs;
 String cfgBackendUrl = "";   // ex.: https://api.seu-dominio.com (sem /api/sala)
 String cfgToken = "";        // token do dispositivo — enviado no header X-Device-Token
+String cfgCfId = "";         // Cloudflare Access: Client ID do Service Token (o mesmo pra toda a frota)
+String cfgCfSecret = "";     // Cloudflare Access: Client Secret do Service Token
 
 // Variáveis globais de estado que armazenam a leitura do ciclo atual.
 // Inicializadas com zero para evitar envio de "lixo de memória" antes da primeira leitura.
@@ -409,6 +411,12 @@ bool enviarParaVercel(int salaNumero, const char* json) {
     // Token do provisionamento: autentica o dispositivo no backend (Fase 4)
     http.addHeader("X-Device-Token", cfgToken);
   }
+  if (cfgCfId.length() > 0) {
+    // Cloudflare Access (Service Token): libera a passagem pela borda quando a
+    // API pública está protegida por uma Application do Access.
+    http.addHeader("CF-Access-Client-Id", cfgCfId);
+    http.addHeader("CF-Access-Client-Secret", cfgCfSecret);
+  }
   http.setTimeout(8000);                              // Timeout de 8s (evita travar se Vercel lenta)
 
   int code = http.POST(json);                         // Dispara o POST e recebe o código HTTP
@@ -671,6 +679,8 @@ void handleConfigSalvar() {
   int sala = extrairCampoInt(corpo, "sala");
   String token = extrairCampoString(corpo, "token");
   String url = extrairCampoString(corpo, "backend_url");
+  String cfid = extrairCampoString(corpo, "cf_access_client_id");
+  String cfsec = extrairCampoString(corpo, "cf_access_client_secret");
   if (sala <= 0 || token.length() == 0) {
     server.send(400, "text/html",
       "<meta charset='utf-8'>Arquivo inválido: os campos 'sala' e 'token' são obrigatórios. Volte e cole o JSON completo.");
@@ -679,6 +689,8 @@ void handleConfigSalvar() {
   prefs.putInt("sala", sala);
   prefs.putString("token", token);
   prefs.putString("url", url);
+  prefs.putString("cfid", cfid);    // Cloudflare Access (vazio se o Access não estiver em uso)
+  prefs.putString("cfsec", cfsec);
   server.send(200, "text/html",
     "<meta charset='utf-8'>Provisionamento salvo (sala " + String(sala) + "). Reiniciando em 3 segundos...");
   delay(3000);
@@ -717,6 +729,8 @@ void setup() {
     SALA_PERTENCENTE = salaProvisionada;
     cfgToken = prefs.getString("token", "");
     cfgBackendUrl = prefs.getString("url", "");
+    cfgCfId = prefs.getString("cfid", "");
+    cfgCfSecret = prefs.getString("cfsec", "");
     MODO_SIMULACAO = false;
     Serial.printf("[PROV] Dispositivo provisionado via portal: Sala %d\n", salaProvisionada);
     if (cfgBackendUrl.length() > 0) Serial.println("[PROV] Backend: " + cfgBackendUrl);
