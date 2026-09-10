@@ -241,6 +241,12 @@
             Histórico
           </span>
         </button>
+        <button id="btn-incidentes" class="nav-btn" onclick="showTab('incidentes')">
+          <span class="flex items-center gap-2">
+            <i data-lucide="bell" class="w-4 h-4"></i>
+            Incidentes
+          </span>
+        </button>
       </nav>
 
       <!-- Status de conexão -->
@@ -533,6 +539,62 @@
       </div>
     </div>
 
+    <!-- ============================================================
+         ABA 4: INCIDENTES (v2 — Fase 2)
+         Histórico dos alertas de qualidade do ar disparados no
+         WhatsApp: quando, sala, parâmetro, nível, status do envio
+         e se a condição já foi normalizada.
+    ============================================================ -->
+    <div id="tab-incidentes" style="display:none;" class="animate-fade-in">
+
+      <div class="mb-6 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+               style="background:rgba(229,115,115,0.12);">
+            <i data-lucide="bell-ring" class="w-5 h-5" style="color:#e57373;"></i>
+          </div>
+          <div>
+            <p class="text-text text-sm font-medium">Incidentes — Alertas de Qualidade do Ar</p>
+            <p class="text-sub text-xs">Disparos enviados por WhatsApp quando uma condição ruim persiste.</p>
+          </div>
+        </div>
+        <button onclick="fetchAlertas()" class="rounded-lg px-4 py-2 text-sm font-medium"
+                style="background:rgba(124,158,247,0.15); color:#7c9ef7;">Atualizar</button>
+      </div>
+
+      <div class="rounded-2xl border border-border overflow-hidden elevation-2"
+           style="background:var(--color-panel);">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div class="flex items-center gap-3">
+            <i data-lucide="siren" class="w-4 h-4 text-sub"></i>
+            <p class="text-text text-sm font-medium">Alertas Disparados</p>
+            <span id="alertas-count" class="text-sub text-xs">—</span>
+          </div>
+          <p class="text-sub text-xs">Níveis: CO₂ &gt;1500 (5 min) · CO₂ &gt;3000 (1 min) · demais críticos (10 min)</p>
+        </div>
+        <div class="overflow-auto" style="max-height:520px;">
+          <table class="data-table w-full border-collapse">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Sala</th>
+                <th>Parâmetro</th>
+                <th>Nível</th>
+                <th>Valor</th>
+                <th>Envio WhatsApp</th>
+                <th>Normalizado</th>
+              </tr>
+            </thead>
+            <tbody id="alertas-body">
+              <tr>
+                <td colspan="7" class="text-center py-10 text-sub text-sm">Carregando…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 
@@ -715,11 +777,13 @@
       document.getElementById('tab-visao').style.display = 'none';
       document.getElementById('tab-dashboard').style.display = 'none';
       document.getElementById('tab-historico').style.display = 'none';
+      document.getElementById('tab-incidentes').style.display = 'none';
 
       // Remove 'active' de todos os botões
       document.getElementById('btn-visao').classList.remove('active');
       document.getElementById('btn-dashboard').classList.remove('active');
       document.getElementById('btn-historico').classList.remove('active');
+      document.getElementById('btn-incidentes').classList.remove('active');
 
       // Exibe a aba escolhida e ativa o botão
       document.getElementById('tab-' + tabName).style.display = 'block';
@@ -728,6 +792,11 @@
       // Se abriu a Visão Geral, atualiza os cards de status de todas as salas
       if (tabName === 'visao') {
         updateVisaoGeral();
+      }
+
+      // Se abriu Incidentes, busca os alertas mais recentes
+      if (tabName === 'incidentes') {
+        fetchAlertas();
       }
 
       // Se abriu o Histórico, atualiza gráficos e tabela da sala selecionada
@@ -1177,6 +1246,10 @@
         /**
          * Atualiza o rótulo de última atualização no header.
          */
+        if (document.getElementById('tab-incidentes').style.display !== 'none') {
+          fetchAlertas();
+        }
+
         const now = new Date();
         document.getElementById('last-update-label').textContent =
           'Atualizado às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1307,6 +1380,58 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
+    }
+
+
+    /* ===========================================================
+       INCIDENTES (v2 — Fase 2)
+       Busca em /api/alertas o histórico de alertas disparados no
+       WhatsApp e renderiza a tabela da aba Incidentes.
+    =========================================================== */
+    const NOME_PARAMETRO = {
+      co2: 'CO₂', pm25: 'PM2.5', voc: 'VOC',
+      temperatura: 'Temperatura', umidade: 'Umidade',
+    };
+
+    async function fetchAlertas() {
+      const tbody = document.getElementById('alertas-body');
+      try {
+        const r = await fetch('/api/alertas?limit=100');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const alertas = await r.json();
+        document.getElementById('alertas-count').textContent = alertas.length + ' incidente(s)';
+
+        if (alertas.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="text-center py-10 text-sub text-sm">' +
+            'Nenhum incidente registrado. 🎉</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = alertas.map(a => {
+          const dt = new Date(a.enviado_em);
+          const quando = dt.toLocaleDateString('pt-BR') + ' ' +
+            dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const nivelCor = a.nivel === 'critico' ? '#e57373' : '#ffb74d';
+          const envio = a.erro_envio
+            ? '<span style="color:#e57373;" title="' + String(a.erro_envio).replace(/"/g, '&quot;') + '">falha no envio</span>'
+            : '<span style="color:#81c784;">enviado</span>';
+          const norm = a.normalizado_em
+            ? new Date(a.normalizado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            : '<span style="color:#ffb74d;">em aberto</span>';
+          return '<tr>' +
+            '<td>' + quando + '</td>' +
+            '<td>' + (a.sala_nome || ('Sala ' + a.sala)) + '</td>' +
+            '<td>' + (NOME_PARAMETRO[a.parametro] || a.parametro) + '</td>' +
+            '<td style="color:' + nivelCor + '; font-weight:500;">' + a.nivel + '</td>' +
+            '<td>' + (a.valor == null ? '—' : a.valor) + '</td>' +
+            '<td>' + envio + '</td>' +
+            '<td>' + norm + '</td>' +
+            '</tr>';
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-10 text-sub text-sm">' +
+          'Falha ao carregar incidentes: ' + e.message + '</td></tr>';
+      }
     }
   </script>
 </body>

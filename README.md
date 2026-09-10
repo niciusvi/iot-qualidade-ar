@@ -298,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status:** Fase 1 (banco de dados + histórico + stack Docker) **implementada em 02/09/2026**. As demais fases seguem em desenvolvimento. As seções v1 deste README valem para a tag `v1-serverless`.
+> **Status:** Fase 1 (banco + histórico + Docker) e **Fase 2 (alertas WhatsApp) implementadas em 02/09/2026**. As demais fases seguem em desenvolvimento. As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -476,3 +476,66 @@ Nada muda no firmware além da constante `BASE_URL`, que deve apontar para a URL
 
 - As funções serverless (`api/salaN.js`) e o `public/` foram removidos; o código v1 completo está na tag **`v1-serverless`**.
 - Não há dados a migrar: a v1 não tinha persistência (memória volátil).
+
+---
+
+## 📲 Fase 2 — Alertas WhatsApp (implementada)
+
+A stack agora é **100% autossuficiente**: a Evolution API roda **dentro do próprio
+`docker-compose.yml`** (serviços `evolution` + `redis`, usando um database
+`evolution` separado no mesmo Postgres). Nada depende de infraestrutura externa —
+a mesma stack sobe completa em um Portainer, VPS, Azure Container Apps ou AWS ECS.
+
+### Regras de disparo
+
+| Condição | Limiar | Persistência p/ alertar | Nível |
+|---|---|---|---|
+| CO₂ crítico (risco de mal-estar/desmaio) | > 3000 ppm | **1 minuto** | 🚨 critico |
+| CO₂ alto | > 1500 ppm | **5 minutos** | ⚠️ alto |
+| PM2.5 | > 35 µg/m³ | 10 minutos | 🚨 critico |
+| VOC | > 200 | 10 minutos | 🚨 critico |
+| Temperatura | fora de 18–26 °C | 10 minutos | 🚨 critico |
+| Umidade | fora de 30–70% | 10 minutos | 🚨 critico |
+
+- Um pico isolado de 30 s **não** dispara nada: a condição precisa persistir pela janela inteira (leituras consecutivas ruins; buracos de coleta > 3 min zeram a contagem).
+- **Anti-spam:** 1 alerta a cada 30 min por sala/parâmetro/nível — por nível para permitir o escalonamento alto → crítico dentro da mesma meia hora (um risco maior nunca fica silenciado).
+- **Normalização:** quando o parâmetro volta ao nível seguro, o alerta é fechado e uma mensagem ✅ de normalizado é enviada.
+- Todo disparo fica gravado na tabela `alertas` e aparece na aba **Incidentes** do dashboard (`GET /api/alertas`), incluindo falhas de envio — nenhum incidente se perde mesmo com o WhatsApp fora do ar.
+
+### Configurando o WhatsApp (uma única vez)
+
+1. No `.env`, defina `EVOLUTION_API_KEY` (invente uma chave forte) e suba a stack.
+2. Abra o **Manager** da Evolution: `http://SEU-HOST:8081/manager` → conecte usando a URL do servidor e a `EVOLUTION_API_KEY`.
+3. Crie uma instância com o **mesmo nome** de `EVOLUTION_INSTANCE` (padrão: `escola`), tipo *Baileys*.
+4. Escaneie o QR Code com o WhatsApp do número dedicado do projeto.
+5. Cadastre os destinatários iniciais em `ALERTA_NUMEROS` (números `5511999999999` ou grupos `120363...@g.us`, separados por vírgula) — a partir da Fase 3 esse cadastro será feito pelo portal.
+
+> **Volume `pgdata` antigo (criado na Fase 1)?** O database da Evolution é criado
+> automaticamente só na primeira inicialização do volume. Para stacks já existentes,
+> rode uma única vez:
+> `docker compose exec db psql -U iaq -c 'CREATE DATABASE evolution OWNER iaq;'`
+
+### Variáveis de ambiente novas
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `EVOLUTION_API_KEY` | — (obrigatória) | Chave de autenticação da Evolution API |
+| `EVOLUTION_INSTANCE` | `escola` | Nome da instância WhatsApp |
+| `EVOLUTION_PORT` | `8081` | Porta do Manager no host |
+| `ALERTA_NUMEROS` | vazio | Destinatários iniciais (separados por vírgula) |
+| `DASHBOARD_URL` | vazio | URL pública do painel, anexada às mensagens |
+
+### Testando um alerta sem esperar o ar piorar
+
+```bash
+# 1. Insere uma leitura crítica "90 segundos atrás" direto no banco:
+docker compose exec db psql -U iaq -d iaq -c \
+  "INSERT INTO leituras (sala, data_hora, co2) VALUES (3, now()-interval '90 seconds', 3200);"
+
+# 2. Envia a leitura "atual" (como o ESP32 faria):
+curl -X POST http://localhost:3000/api/sala3 -H 'Content-Type: application/json' \
+  -d '{"co2":3200,"temperatura":24,"umidade":50,"pm25":10,"voc":80}'
+
+# 3. O alerta aparece em:
+curl http://localhost:3000/api/alertas
+```
