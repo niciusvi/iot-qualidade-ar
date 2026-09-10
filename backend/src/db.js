@@ -5,13 +5,18 @@
  *
  * O backend é "stateless": TODO o estado vive aqui no banco.
  * O schema é criado automaticamente na subida (CREATE TABLE IF NOT EXISTS),
- * então não há passo manual de migração para o escopo da Fase 1.
+ * então não há passo manual de migração para o escopo das Fases 1-2.
  *
  * Tabelas:
  *   salas           → cadastro das salas monitoradas
  *   leituras        → cada POST do ESP32 vira uma linha (dados brutos)
  *   agregados_hora  → médias/mín/máx por hora (mantidos para sempre;
  *                     os brutos são apagados após RETENCAO_DIAS)
+ *   destinatarios   → números/grupos de WhatsApp que recebem alertas (Fase 2;
+ *                     cadastro pelo portal chega na Fase 3 — por ora, seed
+ *                     via variável de ambiente ALERTA_NUMEROS)
+ *   alertas         → histórico de incidentes: cada disparo de alerta,
+ *                     com status de envio e de normalização
  */
 import pg from 'pg';
 
@@ -72,6 +77,33 @@ CREATE TABLE IF NOT EXISTS agregados_hora (
   luz_avg         REAL,
   PRIMARY KEY (sala, hora)
 );
+
+-- Fase 2: quem recebe os alertas no WhatsApp
+CREATE TABLE IF NOT EXISTS destinatarios (
+  id        SERIAL PRIMARY KEY,
+  nome      TEXT NOT NULL DEFAULT '',
+  numero    TEXT NOT NULL UNIQUE,   -- individual: 5511999999999 · grupo: 120363...@g.us
+  ativo     BOOLEAN NOT NULL DEFAULT TRUE,
+  criado_em TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Fase 2: histórico de incidentes (cada alerta disparado)
+CREATE TABLE IF NOT EXISTS alertas (
+  id             BIGSERIAL PRIMARY KEY,
+  sala           INT NOT NULL REFERENCES salas(id),
+  parametro      TEXT NOT NULL,     -- co2, pm25, voc, temperatura, umidade
+  nivel          TEXT NOT NULL,     -- alto | critico
+  valor          REAL,
+  limite         TEXT,
+  mensagem       TEXT,
+  destinatarios  TEXT,              -- números que receberam, separados por vírgula
+  erro_envio     TEXT,              -- NULL = envio ok; senão, detalhe das falhas
+  enviado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  normalizado_em TIMESTAMPTZ        -- NULL = condição ainda ativa
+);
+
+CREATE INDEX IF NOT EXISTS idx_alertas_sala_data
+  ON alertas (sala, enviado_em DESC);
 `;
 
 /** Seed: as 10 salas iniciais (mesmos nomes do frontend). */
@@ -99,6 +131,20 @@ export async function initDb({ tentativas = 15, intervaloMs = 3000 } = {}) {
           [id, nome]
         );
       }
+
+      // Destinatários iniciais dos alertas via env (o portal assume na Fase 3)
+      const numeros = (process.env.ALERTA_NUMEROS || '')
+        .split(',').map((s) => s.trim()).filter(Boolean);
+      for (const numero of numeros) {
+        await pool.query(
+          `INSERT INTO destinatarios (nome, numero)
+           VALUES ('Configurado via ALERTA_NUMEROS', $1)
+           ON CONFLICT (numero) DO NOTHING`,
+          [numero]
+        );
+      }
+      if (numeros.length) console.log(`[db] ${numeros.length} destinatário(s) do .env garantidos.`);
+
       console.log(`[db] Schema pronto. Retenção de brutos: ${RETENCAO_DIAS} dias.`);
       return;
     } catch (err) {

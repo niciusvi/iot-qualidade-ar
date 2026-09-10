@@ -20,6 +20,7 @@
  */
 import express from 'express';
 import { pool, initDb, RETENCAO_DIAS } from './db.js';
+import { avaliarAlertas } from './alertas.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -123,6 +124,9 @@ app.post('/api/sala:id(\\d+)', async (req, res, next) => {
     );
 
     res.status(200).json({ status: 'ok', registro: rows[0] });
+
+    // Fase 2: avalia as regras de alerta desta sala em segundo plano
+    avaliarAlertas(sala).catch((err) => console.error('[alertas]', err.message));
   } catch (err) { next(err); }
 });
 
@@ -248,6 +252,30 @@ app.get('/api/agregado', async (req, res, next) => {
 
     buckets.sort((a, b) => a.data - b.data);
     res.json({ sala, intervalo, inicio, fim, total: buckets.length, buckets });
+  } catch (err) { next(err); }
+});
+
+/* ============================================================================
+ * GET /api/alertas — histórico de incidentes (Fase 2)
+ *   ?sala=3   (opcional) filtra por sala
+ *   &limit=50 (opcional; máx 500)
+ * Mais recente primeiro. normalizado_em = NULL → condição ainda ativa.
+ * ==========================================================================*/
+app.get('/api/alertas', async (req, res, next) => {
+  try {
+    const limit = clamp(Number(req.query.limit) || 50, 1, 500);
+    const sala = Number(req.query.sala);
+    const filtraSala = Number.isInteger(sala) && sala > 0;
+    const { rows } = await pool.query(
+      `SELECT a.id::int AS id, a.sala, s.nome AS sala_nome, a.parametro, a.nivel,
+              a.valor, a.limite, a.mensagem, a.destinatarios, a.erro_envio,
+              a.enviado_em, a.normalizado_em
+       FROM alertas a JOIN salas s ON s.id = a.sala
+       ${filtraSala ? 'WHERE a.sala = $2' : ''}
+       ORDER BY a.enviado_em DESC LIMIT $1`,
+      filtraSala ? [limit, sala] : [limit]
+    );
+    res.json(rows);
   } catch (err) { next(err); }
 });
 
