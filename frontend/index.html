@@ -41,6 +41,150 @@
         }
       }
     }
+
+    /* ===========================================================
+       CONFIGURAÇÕES (v2 — Fase 3, somente admin)
+       CRUD de salas (com download do arquivo de provisionamento
+       do ESP32), destinatários WhatsApp e usuários do portal.
+    =========================================================== */
+    async function carregarConfig() {
+      try {
+        const [salas, dest, users] = await Promise.all([
+          authFetch('/api/salas').then(r => r.json()),
+          authFetch('/api/destinatarios').then(r => r.json()),
+          authFetch('/api/usuarios').then(r => r.json()),
+        ]);
+        renderCfgSalas(salas);
+        renderCfgDestinatarios(dest);
+        renderCfgUsuarios(users);
+      } catch (e) { console.error('[School Air] config:', e); }
+    }
+
+    const chipAtivo = (on) => on
+      ? '<span style="color:#81c784;">ativa</span>'
+      : '<span style="color:#e57373;">inativa</span>';
+    const btnMini = (rotulo, cor, fn) =>
+      `<button onclick="${fn}" class="rounded px-2 py-1" style="background:rgba(${cor},0.12); color:rgb(${cor}); font-size:11px; margin-right:6px;">${rotulo}</button>`;
+
+    function renderCfgSalas(salas) {
+      document.getElementById('cfg-salas-body').innerHTML = salas.map(s => `<tr>
+        <td>${s.id}</td><td>${s.nome}</td><td>${chipAtivo(s.ativa)}</td>
+        <td>${btnMini('provisionamento', '124,158,247', `baixarProvisionamento(${s.id})`)}
+            ${btnMini(s.ativa ? 'desativar' : 'reativar', s.ativa ? '229,115,115' : '129,199,132', `alternarSala(${s.id}, ${!s.ativa})`)}</td>
+      </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhuma sala.</td></tr>';
+    }
+
+    async function novaSala() {
+      const nome = document.getElementById('cfg-sala-nome').value.trim();
+      if (!nome) return;
+      const r = await authFetch('/api/salas', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome }),
+      });
+      if (r.ok) {
+        const sala = await r.json();
+        document.getElementById('cfg-sala-nome').value = '';
+        await baixarProvisionamento(sala.id);   // baixa o arquivo do ESP32 na hora
+        carregarConfig();
+        carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
+      } else { alert((await r.json()).erro || 'Falha ao criar sala'); }
+    }
+
+    async function baixarProvisionamento(id) {
+      const r = await authFetch('/api/salas/' + id + '/provisionamento');
+      if (!r.ok) { alert('Falha ao gerar o arquivo'); return; }
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sala-' + id + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    async function alternarSala(id, ativa) {
+      await authFetch('/api/salas/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativa }),
+      });
+      carregarConfig();
+      carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
+    }
+
+    function renderCfgDestinatarios(dest) {
+      document.getElementById('cfg-dest-body').innerHTML = dest.map(d => `<tr>
+        <td>${d.nome || '—'}</td><td>${d.numero}</td><td>${chipAtivo(d.ativo)}</td>
+        <td>${btnMini(d.ativo ? 'desativar' : 'reativar', d.ativo ? '229,115,115' : '129,199,132', `alternarDestinatario(${d.id}, ${!d.ativo})`)}
+            ${btnMini('remover', '229,115,115', `removerDestinatario(${d.id})`)}</td>
+      </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhum destinatário — os alertas não serão entregues.</td></tr>';
+    }
+
+    async function novoDestinatario() {
+      const nome = document.getElementById('cfg-dest-nome').value.trim();
+      const numero = document.getElementById('cfg-dest-numero').value.trim();
+      const r = await authFetch('/api/destinatarios', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, numero }),
+      });
+      if (r.ok) {
+        document.getElementById('cfg-dest-nome').value = '';
+        document.getElementById('cfg-dest-numero').value = '';
+        carregarConfig();
+      } else { alert((await r.json()).erro || 'Falha ao cadastrar'); }
+    }
+
+    async function alternarDestinatario(id, ativo) {
+      await authFetch('/api/destinatarios/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo }),
+      });
+      carregarConfig();
+    }
+
+    async function removerDestinatario(id) {
+      if (!confirm('Remover este destinatário?')) return;
+      await authFetch('/api/destinatarios/' + id, { method: 'DELETE' });
+      carregarConfig();
+    }
+
+    function renderCfgUsuarios(users) {
+      document.getElementById('cfg-user-body').innerHTML = users.map(u => `<tr>
+        <td>${u.nome}</td><td>${u.usuario}</td><td>${u.perfil}</td><td>${chipAtivo(u.ativo)}</td>
+        <td>${btnMini(u.ativo ? 'desativar' : 'reativar', u.ativo ? '229,115,115' : '129,199,132', `alternarUsuario(${u.id}, ${!u.ativo})`)}
+            ${btnMini('remover', '229,115,115', `removerUsuario(${u.id})`)}</td>
+      </tr>`).join('');
+    }
+
+    async function novoUsuario() {
+      const r = await authFetch('/api/usuarios', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: document.getElementById('cfg-user-nome').value.trim(),
+          usuario: document.getElementById('cfg-user-login').value.trim(),
+          senha: document.getElementById('cfg-user-senha').value,
+          perfil: document.getElementById('cfg-user-perfil').value,
+        }),
+      });
+      if (r.ok) {
+        ['cfg-user-nome', 'cfg-user-login', 'cfg-user-senha'].forEach(id =>
+          document.getElementById(id).value = '');
+        carregarConfig();
+      } else { alert((await r.json()).erro || 'Falha ao criar usuário'); }
+    }
+
+    async function alternarUsuario(id, ativo) {
+      const r = await authFetch('/api/usuarios/' + id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!r.ok) alert((await r.json()).erro || 'Falha');
+      carregarConfig();
+    }
+
+    async function removerUsuario(id) {
+      if (!confirm('Excluir este usuário?')) return;
+      const r = await authFetch('/api/usuarios/' + id, { method: 'DELETE' });
+      if (!r.ok) alert((await r.json()).erro || 'Falha');
+      carregarConfig();
+    }
   </script>
 
   <style>
@@ -202,6 +346,33 @@
 <body class="min-h-screen">
 
   <!-- ============================================================
+       LOGIN (v2 — Fase 3): o portal exige autenticação.
+       Perfis: visualizacao / analise / admin.
+  ============================================================ -->
+  <div id="login-overlay" style="position:fixed; inset:0; z-index:100; background:var(--color-bg); display:flex; align-items:center; justify-content:center;">
+    <div class="rounded-2xl border border-border p-8 elevation-3" style="background:var(--color-panel); width:340px;">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:rgba(124,158,247,0.15);">
+          <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
+        </div>
+        <div>
+          <p class="text-text text-base font-medium">School <span style="color:#7c9ef7;">Air</span></p>
+          <p class="text-sub text-xs">Acesso ao portal</p>
+        </div>
+      </div>
+      <label class="text-sub text-xs block mb-1" for="login-usuario">Usuário</label>
+      <input id="login-usuario" type="text" autocomplete="username"
+             class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
+      <label class="text-sub text-xs block mb-1" for="login-senha">Senha</label>
+      <input id="login-senha" type="password" autocomplete="current-password"
+             class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
+      <button onclick="fazerLogin()" class="w-full rounded-lg px-4 py-2 text-sm font-medium"
+              style="background:rgba(124,158,247,0.2); color:#7c9ef7;">Entrar</button>
+      <p id="login-erro" class="text-xs mt-3" style="color:#e57373; min-height:16px;"></p>
+    </div>
+  </div>
+
+  <!-- ============================================================
        HEADER — Barra superior fixa com logo, navegação e status
   ============================================================ -->
   <header class="sticky top-0 z-50 border-b border-border"
@@ -247,12 +418,21 @@
             Incidentes
           </span>
         </button>
+        <button id="btn-config" class="nav-btn" onclick="showTab('config')" style="display:none;">
+          <span class="flex items-center gap-2">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+            Configurações
+          </span>
+        </button>
       </nav>
 
       <!-- Status de conexão -->
-      <div class="flex items-center gap-2 text-xs text-sub">
+      <div class="flex items-center gap-3 text-xs text-sub">
         <div class="live-dot"></div>
         <span id="last-update-label">Aguardando dados…</span>
+        <span id="user-chip" class="status-chip" style="background:rgba(124,158,247,0.1); color:#7c9ef7;"></span>
+        <button onclick="logout()" class="rounded-lg px-3 py-1.5" title="Sair"
+                style="background:rgba(229,115,115,0.12); color:#e57373;">Sair</button>
       </div>
     </div>
   </header>
@@ -461,7 +641,7 @@
             </select>
           </div>
           <button onclick="consultarHistorico()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(124,158,247,0.15); color:#7c9ef7;">Consultar</button>
-          <button onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(129,199,132,0.12); color:#81c784;">Exportar CSV</button>
+          <button id="btn-csv" onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(129,199,132,0.12); color:#81c784;">Exportar CSV</button>
           <button id="hq-live-btn" onclick="voltarTempoReal()" style="display:none; background:rgba(255,183,77,0.12); color:#ffb74d;" class="rounded-lg px-4 py-2 text-sm font-medium">Voltar ao tempo real</button>
         </div>
         <p id="hq-info" class="text-sub text-xs mt-3">Sem consulta ativa — exibindo dados em tempo real da sala selecionada.</p>
@@ -595,6 +775,82 @@
       </div>
     </div>
 
+    <!-- ============================================================
+         ABA 5: CONFIGURAÇÕES (v2 — Fase 3, somente admin)
+         Gestão de salas (com provisionamento do ESP32),
+         destinatários de alerta WhatsApp e usuários do portal.
+    ============================================================ -->
+    <div id="tab-config" style="display:none;" class="animate-fade-in">
+
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+
+        <!-- SALAS -->
+        <div class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
+          <p class="text-text text-sm font-medium mb-1">Salas monitoradas</p>
+          <p class="text-sub text-xs mb-4">Ao adicionar, baixe o arquivo de provisionamento e importe na página local do ESP32 (rota /config do dispositivo).</p>
+          <div class="flex gap-2 mb-4">
+            <input id="cfg-sala-nome" placeholder="Nome da nova sala (ex.: Biblioteca)"
+                   class="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+            <button onclick="novaSala()" class="rounded-lg px-4 py-2 text-sm font-medium"
+                    style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+          </div>
+          <div class="overflow-auto" style="max-height:300px;">
+            <table class="data-table w-full border-collapse">
+              <thead><tr><th>#</th><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody id="cfg-salas-body"><tr><td colspan="4" class="text-center py-6 text-sub text-sm">Carregando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- DESTINATÁRIOS -->
+        <div class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
+          <p class="text-text text-sm font-medium mb-1">Destinatários dos alertas (WhatsApp)</p>
+          <p class="text-sub text-xs mb-4">Número individual (5511999999999) ou ID de grupo (120363...@g.us).</p>
+          <div class="flex gap-2 mb-4">
+            <input id="cfg-dest-nome" placeholder="Nome"
+                   class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:130px;">
+            <input id="cfg-dest-numero" placeholder="Número ou grupo"
+                   class="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+            <button onclick="novoDestinatario()" class="rounded-lg px-4 py-2 text-sm font-medium"
+                    style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+          </div>
+          <div class="overflow-auto" style="max-height:300px;">
+            <table class="data-table w-full border-collapse">
+              <thead><tr><th>Nome</th><th>Número</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody id="cfg-dest-body"><tr><td colspan="4" class="text-center py-6 text-sub text-sm">Carregando…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- USUÁRIOS -->
+      <div class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
+        <p class="text-text text-sm font-medium mb-1">Usuários do portal</p>
+        <p class="text-sub text-xs mb-4">Perfis: <strong>visualizacao</strong> (só vê) · <strong>analise</strong> (vê + baixa CSV) · <strong>admin</strong> (tudo).</p>
+        <div class="flex flex-wrap gap-2 mb-4">
+          <input id="cfg-user-nome" placeholder="Nome completo"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:180px;">
+          <input id="cfg-user-login" placeholder="login"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:130px;">
+          <input id="cfg-user-senha" type="password" placeholder="senha"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:130px;">
+          <select id="cfg-user-perfil" class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+            <option value="visualizacao">visualizacao</option>
+            <option value="analise">analise</option>
+            <option value="admin">admin</option>
+          </select>
+          <button onclick="novoUsuario()" class="rounded-lg px-4 py-2 text-sm font-medium"
+                  style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+        </div>
+        <div class="overflow-auto" style="max-height:300px;">
+          <table class="data-table w-full border-collapse">
+            <thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Status</th><th>Ações</th></tr></thead>
+            <tbody id="cfg-user-body"><tr><td colspan="5" class="text-center py-6 text-sub text-sm">Carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 
@@ -619,6 +875,56 @@
     =========================================================== */
     lucide.createIcons();
 
+    /* ===========================================================
+       AUTENTICAÇÃO (v2 — Fase 3)
+       O portal exige login. O token JWT vai em todas as chamadas
+       via authFetch(); um 401 derruba a sessão e reexibe o login.
+    =========================================================== */
+    let AUTH = null; // { token, nome, usuario, perfil }
+
+    function nivelPerfil(p) { return { visualizacao: 1, analise: 2, admin: 3 }[p] || 0; }
+
+    async function authFetch(url, opts) {
+      opts = opts || {};
+      opts.headers = Object.assign({}, opts.headers || {},
+        AUTH ? { 'Authorization': 'Bearer ' + AUTH.token } : {});
+      const r = await fetch(url, opts);
+      if (r.status === 401) { encerrarSessao(); throw new Error('Sessão expirada'); }
+      return r;
+    }
+
+    function encerrarSessao() {
+      AUTH = null;
+      try { localStorage.removeItem('schoolair_auth'); } catch (e) {}
+      document.getElementById('login-overlay').style.display = 'flex';
+    }
+
+    function logout() { encerrarSessao(); location.reload(); }
+
+    async function fazerLogin() {
+      const erro = document.getElementById('login-erro');
+      erro.textContent = '';
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            usuario: document.getElementById('login-usuario').value.trim(),
+            senha: document.getElementById('login-senha').value,
+          }),
+        });
+        if (!r.ok) { erro.textContent = (await r.json()).erro || 'Falha no login'; return; }
+        AUTH = await r.json();
+        try { localStorage.setItem('schoolair_auth', JSON.stringify(AUTH)); } catch (e) {}
+        document.getElementById('login-overlay').style.display = 'none';
+        iniciarApp();
+      } catch (e) { erro.textContent = 'Erro de conexão: ' + e.message; }
+    }
+
+    document.getElementById('login-senha').addEventListener('keydown',
+      (e) => { if (e.key === 'Enter') fazerLogin(); });
+
+
 
     /* ===========================================================
        CONSTANTES E VARIÁVEIS GLOBAIS
@@ -636,34 +942,20 @@
          10: [array de leituras da sala 10]
        }
     =========================================================== */
-    const TOTAL_SALAS = 10;          // Número total de salas monitoradas
     const INTERVALO_FETCH = 30000;   // Busca dados a cada 30 segundos (alinhado com ESP32)
 
-    let selectedSala = 1;            // Sala atualmente selecionada no Dashboard
+    let SALAS = [];                  // [{id, nome}] — carregado de GET /api/salas (Fase 3)
+    let selectedSala = null;         // Sala atualmente selecionada no Dashboard
     let allRoomsData = {};           // Objeto que guarda dados de TODAS as salas
     let chartCO2 = null;             // Referência ao gráfico Chart.js de CO2
     let chartTempUm = null;          // Referência ao gráfico Chart.js de Temp/Umidade
     let historicoQuery = { ativo: false, rows: null, resolucao: 'bruto' }; // Consulta ativa na aba Historico (v2)
 
-    /**
-     * NOMES DAS SALAS:
-     * Array com nomes personalizáveis para cada sala.
-     * O índice 0 é ignorado (salas vão de 1 a 10).
-     * Para mudar o nome de uma sala, basta editar aqui.
-     */
-    const SALA_NOMES = [
-      '',             // índice 0 — não usado
-      'Sala 1',
-      'Sala 2',
-      'Sala 3',
-      'Sala 4',
-      'Sala 5',
-      'Sala 6',
-      'Sala 7',
-      'Sala 8',
-      'Sala 9',
-      'Sala 10',
-    ];
+    /** Nome de exibição de uma sala (a lista vem da API — Fase 3). */
+    function nomeSala(id) {
+      const s = SALAS.find((x) => x.id === id);
+      return s ? s.nome : ('Sala ' + id);
+    }
 
 
     /* ===========================================================
@@ -778,12 +1070,14 @@
       document.getElementById('tab-dashboard').style.display = 'none';
       document.getElementById('tab-historico').style.display = 'none';
       document.getElementById('tab-incidentes').style.display = 'none';
+      document.getElementById('tab-config').style.display = 'none';
 
       // Remove 'active' de todos os botões
       document.getElementById('btn-visao').classList.remove('active');
       document.getElementById('btn-dashboard').classList.remove('active');
       document.getElementById('btn-historico').classList.remove('active');
       document.getElementById('btn-incidentes').classList.remove('active');
+      document.getElementById('btn-config').classList.remove('active');
 
       // Exibe a aba escolhida e ativa o botão
       document.getElementById('tab-' + tabName).style.display = 'block';
@@ -797,6 +1091,11 @@
       // Se abriu Incidentes, busca os alertas mais recentes
       if (tabName === 'incidentes') {
         fetchAlertas();
+      }
+
+      // Se abriu Configurações (admin), carrega salas/destinatários/usuários
+      if (tabName === 'config') {
+        carregarConfig();
       }
 
       // Se abriu o Histórico, atualiza gráficos e tabela da sala selecionada
@@ -828,44 +1127,26 @@
       const container = document.getElementById('sala-selector');
       container.innerHTML = '';
 
-      for (let i = 1; i <= TOTAL_SALAS; i++) {
+      for (const s of SALAS) {
         const btn = document.createElement('button');
-        btn.className = 'sala-pill' + (i === selectedSala ? ' active' : '');
-        btn.textContent = SALA_NOMES[i];
-        btn.setAttribute('data-sala', i);
+        btn.className = 'sala-pill' + (s.id === selectedSala ? ' active' : '');
+        btn.textContent = s.nome;
+        btn.setAttribute('data-sala', s.id);
 
-        /*
-         * Ao clicar no botão pill:
-         * 1. Atualiza a variável selectedSala
-         * 2. Atualiza o destaque visual dos botões (remove 'active' do antigo, adiciona no novo)
-         * 3. Recarrega o Dashboard com os dados da nova sala
-         * 4. Atualiza o label do Histórico
-         */
         btn.addEventListener('click', function () {
-          selectedSala = i;
-
-          // Atualiza visual dos pills
+          selectedSala = s.id;
           document.querySelectorAll('.sala-pill').forEach(p => p.classList.remove('active'));
           btn.classList.add('active');
 
-          // Atualiza o Dashboard com dados da sala selecionada
           const data = allRoomsData[selectedSala];
-          if (data && data.length > 0) {
-            updateDashboard(data[0]);
-          }
+          if (data && data.length > 0) updateDashboard(data[0]);
 
-          // Atualiza labels
           document.getElementById('hero-sala-label').textContent =
-            SALA_NOMES[selectedSala] + ' — Qualidade do Ar Interno (IAQ)';
-          document.getElementById('historico-sala-label').textContent =
-            'Histórico — ' + SALA_NOMES[selectedSala];
+            s.nome + ' — Qualidade do Ar Interno (IAQ)';
+          document.getElementById('historico-sala-label').textContent = 'Histórico — ' + s.nome;
 
-          // Se o Histórico estiver visível, atualiza gráficos e tabela
           if (document.getElementById('tab-historico').style.display !== 'none' && !historicoQuery.ativo) {
-            if (data && data.length > 0) {
-              updateCharts(data);
-              updateTable(data);
-            }
+            if (data && data.length > 0) { updateCharts(data); updateTable(data); }
           }
         });
 
@@ -896,7 +1177,8 @@
       const grid = document.getElementById('salas-grid');
       grid.innerHTML = '';
 
-      for (let i = 1; i <= TOTAL_SALAS; i++) {
+      for (const s of SALAS) {
+        const i = s.id;
         const card = document.createElement('div');
         card.className = 'sala-overview-card';
         card.id = 'overview-card-' + i;
@@ -908,7 +1190,7 @@
               <i data-lucide="loader" class="w-5 h-5" id="overview-icon-${i}" style="color:#525252;"></i>
             </div>
             <div>
-              <p class="text-text text-sm font-medium">${SALA_NOMES[i]}</p>
+              <p class="text-text text-sm font-medium">${s.nome}</p>
               <p class="text-sub text-xs" id="overview-status-${i}">Carregando…</p>
             </div>
           </div>
@@ -918,30 +1200,20 @@
           </div>
         `;
 
-        /*
-         * Ao clicar no card da Visão Geral:
-         * 1. Muda selectedSala para a sala clicada
-         * 2. Navega automaticamente para a aba Dashboard
-         * 3. Atualiza o seletor de pills para refletir a nova seleção
-         */
         card.addEventListener('click', function () {
           selectedSala = i;
-          buildSalaSelector(); // Reconstroi pills com a nova sala ativa
+          buildSalaSelector();
           const data = allRoomsData[selectedSala];
-          if (data && data.length > 0) {
-            updateDashboard(data[0]);
-          }
+          if (data && data.length > 0) updateDashboard(data[0]);
           document.getElementById('hero-sala-label').textContent =
-            SALA_NOMES[selectedSala] + ' — Qualidade do Ar Interno (IAQ)';
-          document.getElementById('historico-sala-label').textContent =
-            'Histórico — ' + SALA_NOMES[selectedSala];
+            s.nome + ' — Qualidade do Ar Interno (IAQ)';
+          document.getElementById('historico-sala-label').textContent = 'Histórico — ' + s.nome;
           showTab('dashboard');
         });
 
         grid.appendChild(card);
       }
 
-      // Re-renderiza ícones Lucide para os novos elementos
       lucide.createIcons();
     }
 
@@ -950,7 +1222,8 @@
      * Chamada toda vez que a aba Visão Geral é aberta ou após fetchAllRooms().
      */
     function updateVisaoGeral() {
-      for (let i = 1; i <= TOTAL_SALAS; i++) {
+      for (const s of SALAS) {
+        const i = s.id;
         const data = allRoomsData[i];
         const bar = document.getElementById('overview-bar-' + i);
         const iconWrap = document.getElementById('overview-icon-wrap-' + i);
@@ -958,6 +1231,7 @@
         const statusText = document.getElementById('overview-status-' + i);
         const tempText = document.getElementById('overview-temp-' + i);
         const co2Text = document.getElementById('overview-co2-' + i);
+        if (!bar) continue;
 
         if (!data || data.length === 0) {
           statusText.textContent = 'Sem dados';
@@ -968,7 +1242,6 @@
         const iaq = calcIAQ(latest);
         const style = getStyle(iaq.status);
 
-        // Atualiza cores e ícone
         bar.style.background = style.barColor;
         iconWrap.style.background = style.bgColor;
         icon.setAttribute('data-lucide', style.icon);
@@ -976,12 +1249,10 @@
         statusText.textContent = style.label;
         statusText.style.color = style.color;
 
-        // Valores resumidos
         tempText.textContent = latest.temperatura.toFixed(1) + '°C';
         co2Text.textContent = latest.co2 + ' ppm';
       }
 
-      // Re-renderiza ícones Lucide atualizados
       lucide.createIcons();
     }
 
@@ -1178,77 +1449,28 @@
        5. Se a aba Histórico estiver visível, atualiza gráficos e tabela
     =========================================================== */
     async function fetchAllRooms() {
+      if (!AUTH || SALAS.length === 0) return;
       try {
-        /**
-         * Cria um array de 10 Promises, uma para cada sala.
-         * Todas as requisições são disparadas SIMULTANEAMENTE
-         * (em paralelo), não uma após a outra. Isso é muito mais
-         * rápido: em vez de 10 × 200ms = 2 segundos sequenciais,
-         * leva apenas ~200ms (o tempo da mais lenta).
-         */
-        const promises = [];
-        for (let i = 1; i <= TOTAL_SALAS; i++) {
-          promises.push(
-            fetch('/api/sala' + i)
-              .then(r => {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-              })
-              .then(data => ({ sala: i, data }))
-              .catch(err => ({ sala: i, data: [], error: err.message }))
-          );
-        }
-
-        /**
-         * Promise.allSettled aguarda TODAS as 10 terminarem,
-         * independente de sucesso ou falha individual.
-         */
+        // Uma requisição por sala ativa, em paralelo
+        const promises = SALAS.map((s) =>
+          authFetch('/api/sala' + s.id)
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => ({ sala: s.id, data }))
+            .catch(err => ({ sala: s.id, data: [], error: err.message }))
+        );
         const results = await Promise.all(promises);
+        results.forEach(result => { allRoomsData[result.sala] = result.data; });
 
-        /**
-         * Salva os dados de cada sala no objeto global allRoomsData.
-         * Mesmo que uma sala tenha falhado (data vazio), salvamos
-         * o array vazio para que a interface saiba que não há dados.
-         */
-        results.forEach(result => {
-          allRoomsData[result.sala] = result.data;
-        });
-
-        /**
-         * Atualiza o Dashboard com os dados da sala atualmente selecionada.
-         * Se os dados existirem e não estiverem vazios, usa o índice [0]
-         * (leitura mais recente).
-         */
         const currentData = allRoomsData[selectedSala];
-        if (currentData && currentData.length > 0) {
-          updateDashboard(currentData[0]);
-        }
+        if (currentData && currentData.length > 0) updateDashboard(currentData[0]);
 
-        /**
-         * Se a aba Visão Geral estiver visível, atualiza todos os 10 cards.
-         * Verificamos a visibilidade para evitar trabalho desnecessário.
-         */
-        if (document.getElementById('tab-visao').style.display !== 'none') {
-          updateVisaoGeral();
-        }
+        if (document.getElementById('tab-visao').style.display !== 'none') updateVisaoGeral();
 
-        /**
-         * Se a aba Histórico estiver visível, atualiza gráficos e tabela.
-         * Necessário porque o Chart.js não renderiza bem em elementos ocultos.
-         */
         if (document.getElementById('tab-historico').style.display !== 'none' && !historicoQuery.ativo) {
-          if (currentData && currentData.length > 0) {
-            updateCharts(currentData);
-            updateTable(currentData);
-          }
+          if (currentData && currentData.length > 0) { updateCharts(currentData); updateTable(currentData); }
         }
 
-        /**
-         * Atualiza o rótulo de última atualização no header.
-         */
-        if (document.getElementById('tab-incidentes').style.display !== 'none') {
-          fetchAlertas();
-        }
+        if (document.getElementById('tab-incidentes').style.display !== 'none') fetchAlertas();
 
         const now = new Date();
         document.getElementById('last-update-label').textContent =
@@ -1270,15 +1492,49 @@
     =========================================================== */
 
     // Constrói os componentes dinâmicos da interface
-    buildSalaSelector();
-    buildVisaoGeral();
-    buildHistoricoControls();
+    /** Carrega a lista de salas ativas da API (Fase 3 — sem número fixo no código). */
+    async function carregarSalas() {
+      const r = await authFetch('/api/salas');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const todas = await r.json();
+      SALAS = todas.filter(s => s.ativa).map(s => ({ id: s.id, nome: s.nome }));
+      if (!SALAS.find(s => s.id === selectedSala)) {
+        selectedSala = SALAS.length > 0 ? SALAS[0].id : null;
+      }
+    }
 
-    // Primeira busca imediata
-    fetchAllRooms();
+    /** Ajusta a interface conforme o perfil logado. */
+    function aplicarPerfilUI() {
+      document.getElementById('user-chip').textContent = AUTH.nome + ' · ' + AUTH.perfil;
+      document.getElementById('btn-config').style.display =
+        AUTH.perfil === 'admin' ? '' : 'none';
+      document.getElementById('btn-csv').style.display =
+        nivelPerfil(AUTH.perfil) >= 2 ? '' : 'none';
+    }
 
-    // Atualização automática a cada 30 segundos (alinhado com o ESP32)
-    setInterval(fetchAllRooms, INTERVALO_FETCH);
+    async function iniciarApp() {
+      try { await carregarSalas(); }
+      catch (e) { console.error('[School Air] Falha ao carregar salas:', e); return; }
+      aplicarPerfilUI();
+      buildSalaSelector();
+      buildVisaoGeral();
+      buildHistoricoControls();
+      fetchAllRooms();
+      lucide.createIcons();
+    }
+
+    // Restaura a sessão salva (se houver) ou exibe o login
+    try {
+      const salvo = localStorage.getItem('schoolair_auth');
+      if (salvo) AUTH = JSON.parse(salvo);
+    } catch (e) {}
+    if (AUTH) {
+      document.getElementById('login-overlay').style.display = 'none';
+      iniciarApp();
+    }
+
+    // Atualização automática a cada 30 segundos (apenas com sessão ativa)
+    setInterval(() => { if (AUTH) fetchAllRooms(); }, INTERVALO_FETCH);
 
 
     /* ===========================================================
@@ -1298,12 +1554,13 @@
     function buildHistoricoControls() {
       const sel = document.getElementById('hq-sala');
       sel.innerHTML = '';
-      for (let i = 1; i <= TOTAL_SALAS; i++) {
+      for (const s of SALAS) {
         const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = SALA_NOMES[i];
+        opt.value = s.id;
+        opt.textContent = s.nome;
         sel.appendChild(opt);
       }
+      if (selectedSala) sel.value = selectedSala;
       const iso = d => d.toISOString().slice(0, 10);
       document.getElementById('hq-fim').value = iso(new Date());
       document.getElementById('hq-inicio').value = iso(new Date(Date.now() - 7 * 24 * 3600 * 1000));
@@ -1323,7 +1580,7 @@
         const url = res === 'bruto'
           ? `/api/historico?sala=${sala}&inicio=${inicio}&fim=${fim}`
           : `/api/agregado?sala=${sala}&inicio=${inicio}&fim=${fim}&intervalo=${res}`;
-        const r = await fetch(url);
+        const r = await authFetch(url);
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const json = await r.json();
         const rows = res === 'bruto' ? json.leituras : json.buckets;
@@ -1338,7 +1595,7 @@
         document.getElementById('hq-live-btn').style.display = '';
         document.getElementById('table-mode-label').textContent =
           'Consulta: ' + inicio + ' a ' + fim + (res === 'bruto' ? '' : ' (media por ' + res + ')');
-        document.getElementById('historico-sala-label').textContent = 'Histórico — ' + SALA_NOMES[sala];
+        document.getElementById('historico-sala-label').textContent = 'Histórico — ' + nomeSala(sala);
         info.textContent = rows.length + ' registro(s) encontrado(s) no periodo.';
       } catch (e) {
         info.textContent = 'Falha na consulta: ' + e.message;
@@ -1351,15 +1608,38 @@
       document.getElementById('table-mode-label').textContent = 'Últimos 50 registros';
       document.getElementById('hq-info').textContent =
         'Sem consulta ativa — exibindo dados em tempo real da sala selecionada.';
-      document.getElementById('historico-sala-label').textContent = 'Histórico — ' + SALA_NOMES[selectedSala];
+      document.getElementById('historico-sala-label').textContent = 'Histórico — ' + nomeSala(selectedSala);
       const data = allRoomsData[selectedSala];
       if (data && data.length > 0) { updateCharts(data); updateTable(data); }
     }
 
-    function exportarCSV() {
+    async function exportarCSV() {
+      const info = document.getElementById('hq-info');
+      if (nivelPerfil(AUTH && AUTH.perfil) < 2) {
+        info.textContent = 'Seu perfil (visualização) não permite baixar métricas.';
+        return;
+      }
+
+      // Consulta bruta ativa → CSV oficial gerado pelo backend (rota protegida)
+      if (historicoQuery.ativo && historicoQuery.resolucao === 'bruto') {
+        try {
+          const inicio = document.getElementById('hq-inicio').value;
+          const fim = document.getElementById('hq-fim').value;
+          const r = await authFetch(`/api/historico.csv?sala=${historicoQuery.sala}&inicio=${inicio}&fim=${fim}`);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const blob = await r.blob();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'schoolair_sala' + historicoQuery.sala + '_' + inicio + '_' + fim + '.csv';
+          document.body.appendChild(a); a.click(); a.remove();
+          return;
+        } catch (e) { info.textContent = 'Falha no download: ' + e.message; return; }
+      }
+
+      // Demais casos (agregado ou tempo real): CSV gerado no navegador
       const rows = historicoQuery.ativo ? historicoQuery.rows : (allRoomsData[selectedSala] || []);
       if (!rows || rows.length === 0) {
-        document.getElementById('hq-info').textContent = 'Nada para exportar — faça uma consulta primeiro.';
+        info.textContent = 'Nada para exportar — faça uma consulta primeiro.';
         return;
       }
       const cols = ['data', 'temperatura', 'umidade', 'co2', 'pm1', 'pm25', 'pm4', 'pm10', 'voc', 'nox', 'luz'];
@@ -1368,18 +1648,15 @@
         linhas.push(cols.map(c => {
           const v = d[c];
           if (v == null) return '';
-          // Data legível; números com vírgula decimal (padrão Excel pt-BR)
           return c === 'data' ? new Date(v).toLocaleString('pt-BR') : String(v).replace('.', ',');
         }).join(';'));
       });
-      const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(['\uFEFF' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       const sala = historicoQuery.ativo ? historicoQuery.sala : selectedSala;
       a.download = 'schoolair_sala' + sala + '_' + new Date().toISOString().slice(0, 10) + '.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      document.body.appendChild(a); a.click(); a.remove();
     }
 
 
@@ -1396,7 +1673,7 @@
     async function fetchAlertas() {
       const tbody = document.getElementById('alertas-body');
       try {
-        const r = await fetch('/api/alertas?limit=100');
+        const r = await authFetch('/api/alertas?limit=100');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const alertas = await r.json();
         document.getElementById('alertas-count').textContent = alertas.length + ' incidente(s)';

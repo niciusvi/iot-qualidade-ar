@@ -298,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status:** Fase 1 (banco + histórico + Docker) e **Fase 2 (alertas WhatsApp) implementadas em 02/09/2026**. As demais fases seguem em desenvolvimento. As seções v1 deste README valem para a tag `v1-serverless`.
+> **Status:** Fases 1 (banco + histórico + Docker), 2 (alertas WhatsApp) e **3 (portal com login, provisionamento e simulação realista) implementadas em 02/09/2026**. As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -539,3 +539,64 @@ curl -X POST http://localhost:3000/api/sala3 -H 'Content-Type: application/json'
 # 3. O alerta aparece em:
 curl http://localhost:3000/api/alertas
 ```
+
+---
+
+## 🔐 Fase 3 — Portal com login, provisionamento de salas e simulação realista (implementada)
+
+### Login e perfis de acesso
+
+O portal agora **exige autenticação** (tela de login). O primeiro administrador é criado
+automaticamente na primeira inicialização com `ADMIN_USUARIO` / `ADMIN_SENHA` do `.env`
+(padrão `admin` / `admin123` — o log avisa para trocar). Sessões usam JWT de 12 h
+assinado com `JWT_SECRET` (obrigatório no `.env`).
+
+| Perfil | O que pode fazer |
+|---|---|
+| **visualizacao** | Ver dashboards, histórico e incidentes |
+| **analise** | Visualização + **download das métricas** (botão CSV, rota `/api/historico.csv`) |
+| **admin** | Tudo + aba **Configurações**: salas, destinatários WhatsApp e usuários |
+
+A ingestão do ESP32 (`POST /api/salaN`) continua sem login de usuário — dispositivos
+autenticam por token próprio (header `X-Device-Token`, reforçado na Fase 4).
+
+### Aba Configurações (admin)
+
+- **Salas**: adicionar sala pelo portal (o dashboard atualiza sozinho — a lista de
+  salas agora vem de `GET /api/salas`, sem número fixo no código), desativar/reativar,
+  e **baixar o arquivo de provisionamento** `sala-<id>.json`.
+- **Destinatários WhatsApp**: cadastrar números (`5511999999999`) ou grupos
+  (`120363...@g.us`), ativar/desativar/remover — substitui o `ALERTA_NUMEROS` do `.env`
+  (que continua funcionando como seed inicial).
+- **Usuários**: criar contas com perfil, ativar/desativar/remover (o sistema impede
+  o admin de rebaixar/excluir a própria conta).
+
+### Provisionando um ESP32 novo (fluxo completo)
+
+1. Admin cria a sala na aba Configurações → o arquivo `sala-<id>.json` baixa na hora
+   (contém id da sala, token do dispositivo, URL do backend de `PUBLIC_BACKEND_URL` e intervalo);
+2. Liga o ESP32 novo e acessa a página local dele: `http://IP-DO-ESP32/config`;
+3. Cola o conteúdo do arquivo no formulário e salva — o ESP32 grava tudo na flash
+   (NVS, sobrevive a reboot) e **reinicia já em modo produção como nó daquela sala**,
+   enviando o token no header `X-Device-Token`.
+   Para desfazer: botão "Limpar provisionamento" na mesma página.
+
+### Simulação realista (firmware)
+
+O modo simulação deixou de usar `random()` puro:
+- **Inércia (random-walk):** cada leitura evolui gradualmente rumo a um alvo — sem saltos de 20→33 °C;
+- **Curva de ocupação escolar:** CO₂/temperatura/VOC sobem nos horários de aula
+  (7h-12h e 13h-18h, com quedas nos intervalos das 10h/12h/15h) e caem à noite —
+  a hora real vem de **NTP** (fuso de Brasília; sem internet, usa um dia sintético);
+- **Episódios de CO₂:** sorteios periódicos elevam uma sala a nível ALTO (~1750 ppm)
+  ou CRÍTICO (~3350 ppm) por 4-11 min — de propósito, para validar os dois níveis
+  de alerta do WhatsApp.
+
+### Variáveis de ambiente novas
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `JWT_SECRET` | — (obrigatória) | Segredo dos tokens de sessão |
+| `ADMIN_USUARIO` | `admin` | Login do administrador inicial |
+| `ADMIN_SENHA` | `admin123` | Senha do administrador inicial (troque!) |
+| `PUBLIC_BACKEND_URL` | vazio | URL pública gravada nos arquivos de provisionamento |
