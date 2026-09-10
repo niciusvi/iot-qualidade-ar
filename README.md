@@ -298,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status:** Fases 1 (banco + histórico + Docker), 2 (alertas WhatsApp) e **3 (portal com login, provisionamento e simulação realista) implementadas em 02/09/2026**. As seções v1 deste README valem para a tag `v1-serverless`.
+> **Status:** Fases 1 a **4 (robustez: token de dispositivo, validação, buffer offline e relatório semanal) implementadas em 02/09/2026**. Resta a Fase 5 (validação com hardware real e entrega). As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -600,3 +600,52 @@ O modo simulação deixou de usar `random()` puro:
 | `ADMIN_USUARIO` | `admin` | Login do administrador inicial |
 | `ADMIN_SENHA` | `admin123` | Senha do administrador inicial (troque!) |
 | `PUBLIC_BACKEND_URL` | vazio | URL pública gravada nos arquivos de provisionamento |
+
+---
+
+## 🛡️ Fase 4 — Robustez e análise (implementada)
+
+### Autenticação do dispositivo (anti dados falsos)
+
+Salas criadas pelo portal têm **token de dispositivo**: o `POST /api/salaN` dessas
+salas só é aceito com o header `X-Device-Token` correto (o ESP32 provisionado envia
+automaticamente). As salas 1-10 do seed (sem token) continuam abertas para o modo
+simulação — ao provisionar um ESP32 real para elas, gere o arquivo na aba
+Configurações e o token passa a ser exigido.
+
+### Validação de faixas plausíveis
+
+Valores não numéricos **ou fisicamente implausíveis** (ex.: temperatura de 300 °C,
+CO₂ negativo) viram `NULL` e não poluem as métricas; payload sem nenhuma métrica
+válida é rejeitado com `400`.
+
+| Métrica | Faixa aceita |
+|---|---|
+| temperatura | −10 a 60 °C |
+| umidade | 0 a 100% |
+| co2 | 0 a 10 000 ppm |
+| pm1/pm25/pm4/pm10 | 0 a 1 000 µg/m³ |
+| voc/nox | 0 a 510 (escala Sensirion) |
+| luz | 0 a 200 000 lx |
+
+### Buffer offline no ESP32
+
+No modo produção, se o Wi-Fi cair ou o backend não responder, as leituras vão para
+um **buffer na RAM (60 leituras = 30 min)** e são reenviadas quando a conexão volta
+(5 por ciclo), com o campo `idade_s` — o backend **corrige o timestamp** para o
+momento real da medição (limite 24 h). O firmware também tenta `WiFi.reconnect()`
+sozinho. Buffer cheio descarta a leitura mais antiga.
+
+### Relatório semanal automático no WhatsApp
+
+Toda **segunda-feira às 7h** (hora de São Paulo), os destinatários recebem o resumo
+dos últimos 7 dias: CO₂ médio/máximo por sala, horas em nível crítico, número de
+alertas e a sala com pior ar da semana. Controle de duplicidade na tabela
+`app_estado`. Para demonstrar sem esperar segunda:
+`POST /api/relatorio-semanal/testar` (admin) devolve o texto e dispara o envio.
+
+### Rota de análise (base do relatório do PI)
+
+`GET /api/analise?inicio=&fim=` (perfil análise+) → por sala: amostras, CO₂
+médio/máximo, horas em nível crítico e alertas no período, ranking das piores
+primeiro — os números que sustentam a discussão bem-estar × desempenho × evasão.

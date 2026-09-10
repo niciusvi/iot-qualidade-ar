@@ -115,6 +115,12 @@ CREATE TABLE IF NOT EXISTS usuarios (
   ativo      BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Fase 4: estado interno da aplicação (ex.: data do último relatório semanal)
+CREATE TABLE IF NOT EXISTS app_estado (
+  chave TEXT PRIMARY KEY,
+  valor TEXT
+);
 `;
 
 /** Seed: as 10 salas iniciais (mesmos nomes do frontend). */

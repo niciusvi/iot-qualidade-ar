@@ -23,6 +23,8 @@ import { pool, initDb, RETENCAO_DIAS } from './db.js';
 import { avaliarAlertas } from './alertas.js';
 import crypto from 'node:crypto';
 import { login, exigirPerfil, seedAdmin, hashSenha } from './auth.js';
+import { jobRelatorioSemanal, montarRelatorioSemanal, estatisticasPeriodo } from './relatorio.js';
+import { enviarWhatsApp } from './alertas.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -101,28 +103,63 @@ app.get('/api/salas', exigirPerfil('visualizacao'), async (req, res, next) => {
  * POST /api/sala<N> — ingestão (ESP32)
  * O caminho /api/sala3 é o MESMO da v1, então o firmware não muda.
  * ==========================================================================*/
+/** Faixas plausíveis por métrica (Fase 4): valor fora da faixa vira NULL. */
+const FAIXAS = {
+  temperatura: [-10, 60], umidade: [0, 100], co2: [0, 10000],
+  pm1: [0, 1000], pm25: [0, 1000], pm4: [0, 1000], pm10: [0, 1000],
+  voc: [0, 510], nox: [0, 510], luz: [0, 200000],
+};
+
 app.post('/api/sala:id(\\d+)', async (req, res, next) => {
   try {
     const sala = Number(req.params.id);
     const body = req.body || {};
 
-    // Validação leve: campo não numérico vira NULL (validação completa é da Fase 4)
+    /**
+     * Fase 4 — autenticação do dispositivo:
+     * Salas criadas pelo portal têm token; o ESP32 provisionado envia o
+     * header X-Device-Token e ele PRECISA conferir. As salas 1-10 do seed
+     * (token NULL) continuam abertas para o modo simulação.
+     */
+    const { rows: salaRows } = await pool.query('SELECT token FROM salas WHERE id = $1', [sala]);
+    if (salaRows.length > 0 && salaRows[0].token) {
+      if (req.headers['x-device-token'] !== salaRows[0].token) {
+        return res.status(401).json({ erro: 'Token do dispositivo ausente ou inválido' });
+      }
+    }
+
+    // Fase 4 — validação: não numérico OU fora da faixa plausível vira NULL
     const valores = METRICAS.map((m) => {
       const v = Number(body[m]);
-      return Number.isFinite(v) ? v : null;
+      if (!Number.isFinite(v)) return null;
+      const [min, max] = FAIXAS[m];
+      return (v >= min && v <= max) ? v : null;
     });
+    if (valores.every((v) => v === null)) {
+      return res.status(400).json({ erro: 'Nenhuma métrica válida no payload' });
+    }
 
-    // Garante que a sala existe (salas novas serão criadas pelo portal na Fase 3)
-    await pool.query(
-      'INSERT INTO salas (id, nome) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
-      [sala, `Sala ${sala}`]
-    );
+    // Garante que a sala existe (a simulação pode postar antes do cadastro)
+    if (salaRows.length === 0) {
+      await pool.query(
+        'INSERT INTO salas (id, nome) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING',
+        [sala, `Sala ${sala}`]
+      );
+    }
+
+    /**
+     * Fase 4 — buffer do ESP32: leituras represadas por queda de Wi-Fi são
+     * reenviadas com o campo idade_s (segundos desde a captura). O timestamp
+     * é corrigido para o momento real da medição (limite de 24 h).
+     */
+    const idadeS = Math.min(Math.max(Number(body.idade_s) || 0, 0), 24 * 3600);
+    const dataHora = new Date(Date.now() - idadeS * 1000);
 
     const { rows } = await pool.query(
-      `INSERT INTO leituras (sala, ${METRICAS.join(', ')})
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO leituras (sala, data_hora, ${METRICAS.join(', ')})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id::int AS id, data_hora AS data`,
-      [sala, ...valores]
+      [sala, dataHora, ...valores]
     );
 
     res.status(200).json({ status: 'ok', registro: rows[0] });
@@ -512,6 +549,34 @@ app.get('/api/historico.csv', exigirPerfil('analise'), async (req, res, next) =>
 });
 
 /* ============================================================================
+ * GET /api/analise — indicadores por sala no período (Fase 4, perfil análise+)
+ *   ?inicio=&fim=   (padrão: últimos 7 dias)
+ * Retorna por sala: amostras, CO₂ médio/máximo, horas em nível crítico
+ * (CO₂ > 1500) e nº de alertas — ranking das piores salas primeiro.
+ * Base para a discussão bem-estar × desempenho × evasão do relatório do PI.
+ * ==========================================================================*/
+app.get('/api/analise', exigirPerfil('analise'), async (req, res, next) => {
+  try {
+    const fim = parseData(req.query.fim, true) || new Date();
+    const inicio = parseData(req.query.inicio) || new Date(fim.getTime() - 7 * 24 * 3600 * 1000);
+    const salas = await estatisticasPeriodo(inicio, fim);
+    res.json({ inicio, fim, salas });
+  } catch (err) { next(err); }
+});
+
+/* ============================================================================
+ * POST /api/relatorio-semanal/testar — dispara o relatório agora (admin)
+ * Útil para demonstração ao orientador sem esperar segunda-feira às 7h.
+ * ==========================================================================*/
+app.post('/api/relatorio-semanal/testar', exigirPerfil('admin'), async (req, res, next) => {
+  try {
+    const texto = await montarRelatorioSemanal();
+    const envio = await enviarWhatsApp(texto);
+    res.json({ texto, envio });
+  } catch (err) { next(err); }
+});
+
+/* ============================================================================
  * JOBS DE AGREGAÇÃO E RETENÇÃO
  * ==========================================================================*/
 
@@ -589,6 +654,7 @@ initDb()
     jobRetencao();
     setInterval(jobAgregacao, 10 * 60 * 1000);
     setInterval(jobRetencao, 24 * 3600 * 1000);
+    setInterval(jobRelatorioSemanal, 3600 * 1000);   // Fase 4: segunda 7h (SP)
     app.listen(PORT, () => console.log(`[api] School Air backend ouvindo na porta ${PORT}`));
   })
   .catch((err) => {
