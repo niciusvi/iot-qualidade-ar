@@ -676,3 +676,31 @@ O documento [`docs/VALIDACAO.md`](docs/VALIDACAO.md) traz:
 
 > ⚠️ O firmware das Fases 3-4 (provisionamento, buffer, simulação realista)
 > ainda **não foi compilado em hardware** — valide na Arduino IDE antes de gravar.
+
+---
+
+## 🔒 Proteção extra da API pública: Cloudflare Access (Service Token)
+
+Quando o backend fica exposto pelo Cloudflare Tunnel, dá para fechar a borda com
+uma Application do **Cloudflare Access** — quem chegar sem credencial leva 403 do
+próprio Cloudflare, antes de tocar o servidor. Máquinas (os ESP32) passam com um
+**Service Token**, sem tela de login:
+
+1. *Zero Trust → Access → Service Auth* → criar o Service Token (Client ID + Secret);
+2. *Access → Applications → Self-hosted* → domínio `api.seu-dominio.com` → política
+   com **Action = Service Auth** incluindo esse token;
+3. No `.env` da stack: `CF_ACCESS_CLIENT_ID` e `CF_ACCESS_CLIENT_SECRET`;
+4. Pronto: os arquivos de provisionamento `sala-<id>.json` passam a incluir as
+   credenciais, o ESP32 as guarda na flash e envia os headers
+   `CF-Access-Client-Id` / `CF-Access-Client-Secret` em cada requisição.
+
+O **mesmo token serve para toda a frota** de ESP32 (a identidade individual de cada
+dispositivo continua sendo o `X-Device-Token` da sala); revogar o token no painel
+do Cloudflare corta todos de uma vez. Dispositivos já provisionados antes do Access
+precisam ser reprovisionados (baixar o arquivo de novo e recolar em `/config`).
+
+> ⚠️ Não use Access no hostname consumido pelo *rewrite* da Vercel — o proxy dela
+> não injeta headers e o painel quebraria. O desenho limpo é: `painel.seu-dominio.com`
+> → nginx da stack (fala com o backend por dentro) e `api.seu-dominio.com` → backend
+> com Access, usado **somente** pelos ESP32. O Manager da Evolution (`:8081`) nunca
+> deve ganhar hostname público.

@@ -510,6 +510,12 @@ app.get('/api/salas/:id(\\d+)/provisionamento', exigirPerfil('admin'), async (re
       token,
       backend_url: process.env.PUBLIC_BACKEND_URL || '',
       intervalo_envio_s: 30,
+      // Cloudflare Access (Service Token): quando a API pública fica atrás do
+      // Access, o ESP32 precisa apresentar estas credenciais em cada request.
+      // O mesmo token serve para todos os dispositivos; a identidade individual
+      // continua sendo o token da sala (X-Device-Token).
+      cf_access_client_id: process.env.CF_ACCESS_CLIENT_ID || '',
+      cf_access_client_secret: process.env.CF_ACCESS_CLIENT_SECRET || '',
     });
   } catch (err) { next(err); }
 });

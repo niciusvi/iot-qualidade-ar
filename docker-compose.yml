@@ -86,6 +86,9 @@ services:
       ADMIN_USUARIO: ${ADMIN_USUARIO:-admin}
       ADMIN_SENHA: ${ADMIN_SENHA:-}
       PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-}
+      # Cloudflare Access — Service Token da frota de ESP32 (opcional)
+      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:-}
+      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:-}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
