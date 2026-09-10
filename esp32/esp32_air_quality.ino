@@ -40,6 +40,8 @@
 #include <WiFi.h>        // Biblioteca nativa para gerenciar a conexão Wi-Fi do ESP32.
 #include <HTTPClient.h>  // Permite criar requisições HTTP (como o POST) para enviar dados à nuvem.
 #include <WebServer.h>   // Instancia um servidor web interno no ESP32, permitindo acesso local via navegador.
+#include <Preferences.h>  // Memória flash NVS — guarda o provisionamento da sala feito pelo portal (Fase 3).
+#include <time.h>         // NTP — hora real usada na curva de ocupação escolar da simulação (Fase 3).
 
 // DESCOMENTE ESTAS LINHAS QUANDO INSTALAR OS SENSORES REAIS (Hardware)
 // #include <Wire.h>               // Protocolo de comunicação I2C, exigido pelos sensores abaixo.
@@ -120,6 +122,17 @@ const int PINO_LDR = 34;     // Pino analógico para o sensor de luminosidade
 
 // Cria o objeto 'server' configurado para escutar a porta 80 (padrão para tráfego web/HTTP)
 WebServer server(80);
+
+/**
+ * PROVISIONAMENTO VIA PORTAL (Fase 3):
+ * O administrador cadastra a sala no portal, baixa o arquivo sala-<id>.json e
+ * cola o conteúdo na página http://IP-DO-ESP32/config. Os dados ficam na
+ * memória flash (NVS) e sobrevivem a reboot e a regravação do firmware.
+ * Um dispositivo provisionado vira automaticamente um nó de PRODUÇÃO da sala.
+ */
+Preferences prefs;
+String cfgBackendUrl = "";   // ex.: https://api.seu-dominio.com (sem /api/sala)
+String cfgToken = "";        // token do dispositivo — enviado no header X-Device-Token
 
 // Variáveis globais de estado que armazenam a leitura do ciclo atual.
 // Inicializadas com zero para evitar envio de "lixo de memória" antes da primeira leitura.
@@ -381,11 +394,21 @@ void enviarParaVercel(int salaNumero, const char* json) {
    * Monta a URL completa concatenando a BASE_URL com o número da sala.
    * Exemplo: "https://...vercel.app/api/sala" + "3" = ".../api/sala3"
    */
-  String url = String(BASE_URL) + String(salaNumero);
+  String url;
+  if (cfgBackendUrl.length() > 0) {
+    // Dispositivo provisionado pelo portal: usa a URL do arquivo sala-<id>.json
+    url = cfgBackendUrl + "/api/sala" + String(salaNumero);
+  } else {
+    url = String(BASE_URL) + String(salaNumero);
+  }
 
   HTTPClient http;
   http.begin(url);                                    // Configura o destino da requisição
   http.addHeader("Content-Type", "application/json"); // Informa que o corpo é JSON
+  if (cfgToken.length() > 0) {
+    // Token do provisionamento: autentica o dispositivo no backend (Fase 4)
+    http.addHeader("X-Device-Token", cfgToken);
+  }
   http.setTimeout(8000);                              // Timeout de 8s (evita travar se Vercel lenta)
 
   int code = http.POST(json);                         // Dispara o POST e recebe o código HTTP
@@ -419,56 +442,192 @@ void enviarParaVercel(int salaNumero, const char* json) {
  * @param salaNumero — Número da sala (1 a 10), usado como offset
  * ============================================================================
  */
+/**
+ * ============================================================================
+ * SIMULAÇÃO REALISTA (v2 — Fase 3)
+ *
+ * Em vez de random() puro (que pulava de 20 °C para 33 °C em 30 s), cada sala
+ * mantém ESTADO próprio e evolui com:
+ *   1. INÉRCIA (random-walk): cada leitura se aproxima gradualmente de um
+ *      valor-alvo, com um pequeno ruído — como um ambiente real.
+ *   2. CURVA DE OCUPAÇÃO ESCOLAR: o alvo de CO2/temperatura/VOC sobe nos
+ *      horários de aula (7-12h e 13-18h, com quedas nos intervalos) e cai à
+ *      noite. A hora vem do NTP; sem internet, usa um dia sintético (uptime).
+ *   3. EPISÓDIOS DE CO2: sorteios periódicos elevam UMA sala a CO2 ALTO
+ *      (~1750 ppm) ou CRÍTICO (~3350 ppm) por 4-11 min — de propósito, para
+ *      validar os dois níveis de alerta do WhatsApp (5 min e 1 min).
+ * ============================================================================
+ */
+bool  simInicializada = false;
+float simTemp[TOTAL_SALAS + 1], simUmid[TOTAL_SALAS + 1], simCo2[TOTAL_SALAS + 1];
+float simPm25[TOTAL_SALAS + 1], simVoc[TOTAL_SALAS + 1];
+int   episodioSala = 0;
+bool  episodioCritico = false;
+unsigned long episodioFim = 0, proximoSorteioEpisodio = 0;
+
+/** Random-walk: aproxima 'atual' do 'alvo' com inércia + ruído. */
+float aproximar(float atual, float alvo, float fator, float ruido) {
+  return atual + (alvo - atual) * fator + (random(-1000, 1001) / 1000.0) * ruido;
+}
+
+/** Fator de ocupação da escola (0.0 = vazia, 1.0 = aula cheia). */
+float fatorOcupacao() {
+  struct tm agoraTm;
+  int hora = -1;
+  if (getLocalTime(&agoraTm, 50)) hora = agoraTm.tm_hour;      // hora real via NTP
+  if (hora < 0) hora = 7 + (int)((millis() / 3600000UL) % 12); // fallback: dia sintético
+  if (hora >= 7 && hora < 12) return (hora == 10) ? 0.3 : 1.0;   // manhã (10h = intervalo)
+  if (hora == 12) return 0.15;                                    // almoço
+  if (hora >= 13 && hora < 18) return (hora == 15) ? 0.3 : 1.0;  // tarde (15h = intervalo)
+  return 0.0;                                                     // noite/madrugada
+}
+
 void gerarDadosSimulados(int salaNumero) {
-  /**
-   * O offset é calculado a partir do número da sala.
-   * Sala 1 → offset 0 (valores normais)
-   * Sala 5 → offset 4 (valores moderados)
-   * Sala 10 → offset 9 (valores elevados)
-   *
-   * Isso cria uma progressão: salas com número alto tendem a ter
-   * piores condições, exercitando todos os estados do Dashboard.
-   */
+  unsigned long agora = millis();
   int offset = salaNumero - 1;
 
-  /**
-   * Temperatura: varia de 20°C (sala 1) a 34°C (sala 10).
-   * random(200, 250) gera inteiros entre 200 e 249.
-   * Dividido por 10.0, resulta em 20.0 a 24.9°C para a sala 1.
-   * O offset de (salaNumero * 10) adiciona 1°C por sala.
-   * Sala 1: 20.0-24.9°C (Excelente)
-   * Sala 5: 24.0-28.9°C (Atenção)
-   * Sala 10: 29.0-33.9°C (Crítico)
-   */
-  t_temp = random(200, 250 + offset * 10) / 10.0;
+  // Estado inicial de cada sala (uma única vez)
+  if (!simInicializada) {
+    for (int s = 1; s <= TOTAL_SALAS; s++) {
+      simTemp[s] = 21.0 + (s - 1) * 0.6;
+      simUmid[s] = 55.0 - (s - 1) * 1.2;
+      simCo2[s]  = 450.0 + (s - 1) * 40.0;
+      simPm25[s] = 8.0 + (s - 1);
+      simVoc[s]  = 60.0 + (s - 1) * 8.0;
+    }
+    simInicializada = true;
+  }
 
-  /**
-   * Umidade: varia com offset inverso (salas altas = mais seco)
-   * Sala 1: 45-65% (Excelente)
-   * Sala 10: 20-40% (Crítico)
-   */
-  t_umid = random(450 - offset * 25, 650 - offset * 25) / 10.0;
+  // Sorteio de episódios de CO2 (reavaliado a cada 2 min, ~12% de chance)
+  if (agora > episodioFim && agora > proximoSorteioEpisodio) {
+    if (random(0, 100) < 12) {
+      episodioSala = random(1, TOTAL_SALAS + 1);
+      episodioCritico = (random(0, 4) == 0);   // 1 em 4 episódios é crítico
+      episodioFim = agora + (unsigned long)random(4, 12) * 60000UL;
+      Serial.printf("[SIM] Episodio de CO2 %s na sala %d por %lu min\n",
+        episodioCritico ? "CRITICO" : "ALTO", episodioSala, (episodioFim - agora) / 60000UL);
+    }
+    proximoSorteioEpisodio = agora + 120000UL;
+  }
 
-  /**
-   * CO2: varia de 400ppm (sala 1) a 2000ppm (sala 10)
-   * Sala 1-3: 400-800 ppm (Excelente)
-   * Sala 4-7: 800-1500 ppm (Atenção)
-   * Sala 8-10: 1200-2000 ppm (Crítico)
-   */
-  t_co2 = random(400 + offset * 80, 800 + offset * 130);
+  // Alvos do momento (ocupação + perfil da sala)
+  float ocup = fatorOcupacao();
+  float alvoTemp = 21.0 + offset * 0.7 + ocup * 1.5;
+  float alvoUmid = 55.0 - offset * 1.5 + ocup * 3.0;
+  float alvoCo2  = 430.0 + ocup * (500.0 + offset * 90.0);
+  float alvoPm25 = 6.0 + offset * 1.3 + ocup * 4.0;
+  float alvoVoc  = 50.0 + offset * 12.0 + ocup * 35.0;
 
-  // Partículas: leve variação por sala
-  t_pm1  = random(5 + offset, 15 + offset * 2);
-  t_pm25 = random(8 + offset * 2, 20 + offset * 3);
-  t_pm4  = random(10 + offset * 2, 25 + offset * 3);
-  t_pm10 = random(15 + offset * 3, 35 + offset * 4);
+  // Episódio ativo nesta sala? O alvo de CO2 dispara para o nível do episódio.
+  if (salaNumero == episodioSala && agora < episodioFim) {
+    alvoCo2 = episodioCritico ? 3350.0 : 1750.0;
+  }
 
-  // VOC e NOx: crescem com o número da sala
-  t_voc = random(30 + offset * 15, 80 + offset * 25);
-  t_nox = random(5 + offset * 3, 20 + offset * 5);
+  // Evolução com inércia (o CO2 responde mais rápido que a temperatura)
+  simTemp[salaNumero] = aproximar(simTemp[salaNumero], alvoTemp, 0.06, 0.08);
+  simUmid[salaNumero] = aproximar(simUmid[salaNumero], alvoUmid, 0.06, 0.25);
+  simCo2[salaNumero]  = aproximar(simCo2[salaNumero],  alvoCo2,  0.25, 12.0);
+  simPm25[salaNumero] = aproximar(simPm25[salaNumero], alvoPm25, 0.08, 0.4);
+  simVoc[salaNumero]  = aproximar(simVoc[salaNumero],  alvoVoc,  0.08, 2.0);
 
-  // Luminosidade: aleatória independente da sala
-  t_luz = random(100, 1000);
+  // Converte o estado contínuo nas variáveis globais de leitura
+  t_temp = simTemp[salaNumero];
+  t_umid = constrain(simUmid[salaNumero], 15.0, 95.0);
+  t_co2  = (int)constrain(simCo2[salaNumero], 400.0, 4000.0);
+  t_pm25 = (int)constrain(simPm25[salaNumero], 1.0, 120.0);
+  t_pm1  = max(1, t_pm25 - (int)random(2, 5));
+  t_pm4  = t_pm25 + random(2, 6);
+  t_pm10 = t_pm25 + random(5, 12);
+  t_voc  = (int)constrain(simVoc[salaNumero], 10.0, 480.0);
+  t_nox  = 5 + offset * 2 + random(0, 8);
+  t_luz  = (ocup > 0.2) ? random(350, 850) : random(5, 60);
+}
+
+
+/**
+ * ============================================================================
+ * PROVISIONAMENTO — página local /config (v2 — Fase 3)
+ *
+ * FLUXO:
+ *   1. Admin cadastra a sala no portal e baixa o arquivo sala-<id>.json
+ *   2. Acessa http://IP-DO-ESP32/config no navegador
+ *   3. Cola o CONTEÚDO do arquivo no formulário e salva
+ *   4. O ESP32 grava tudo na flash (NVS) e reinicia já como nó da sala
+ * ============================================================================
+ */
+
+/** Extrai o valor string de uma chave num JSON simples (sem lib externa). */
+String extrairCampoString(const String& json, const char* chave) {
+  String marca = String("\"") + chave + "\"";
+  int i = json.indexOf(marca); if (i < 0) return "";
+  i = json.indexOf(':', i); if (i < 0) return "";
+  int a = json.indexOf('"', i + 1); if (a < 0) return "";
+  int b = json.indexOf('"', a + 1); if (b < 0) return "";
+  return json.substring(a + 1, b);
+}
+
+/** Extrai o valor numérico de uma chave num JSON simples. */
+int extrairCampoInt(const String& json, const char* chave) {
+  String marca = String("\"") + chave + "\"";
+  int i = json.indexOf(marca); if (i < 0) return 0;
+  i = json.indexOf(':', i); if (i < 0) return 0;
+  return json.substring(i + 1).toInt();
+}
+
+void handleConfigForm() {
+  String pagina =
+    "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    "<title>ESP32 - Provisionamento</title>"
+    "<style>body{background:#121212;color:#e0e0e0;font-family:sans-serif;padding:24px;max-width:640px;margin:0 auto;}"
+    "h1{color:#7c9ef7;font-size:20px;margin-bottom:8px;}p{color:#9e9e9e;font-size:13px;margin-bottom:16px;}"
+    "textarea{width:100%;height:180px;background:#1e1e1e;color:#e0e0e0;border:1px solid #333;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;}"
+    "button{margin-top:12px;padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;}"
+    ".salvar{background:#7c9ef7;color:#121212;}.reset{background:#e57373;color:#121212;margin-left:8px;}"
+    ".status{margin-top:16px;padding:12px;background:#1e1e1e;border:1px solid #333;border-radius:8px;font-size:13px;}</style></head><body>"
+    "<h1>Provisionamento da Sala</h1>"
+    "<p>Cole abaixo o conteúdo do arquivo <b>sala-&lt;id&gt;.json</b> baixado do portal (aba Configurações).</p>"
+    "<form method='POST' action='/config'>"
+    "<textarea name='cfg' placeholder='{ conteudo do arquivo sala-N.json }'></textarea>"
+    "<br><button class='salvar' type='submit'>Salvar e reiniciar</button></form>"
+    "<form method='POST' action='/config/reset' style='display:inline'>"
+    "<button class='reset' type='submit'>Limpar provisionamento</button></form>"
+    "<div class='status'>Status atual: ";
+  if (prefs.getInt("sala", 0) > 0) {
+    pagina += "PROVISIONADO — Sala " + String(prefs.getInt("sala", 0));
+    String u = prefs.getString("url", "");
+    if (u.length() > 0) pagina += " → " + u;
+  } else {
+    pagina += "não provisionado (usando configuração do código-fonte)";
+  }
+  pagina += "</div></body></html>";
+  server.send(200, "text/html", pagina);
+}
+
+void handleConfigSalvar() {
+  String corpo = server.arg("cfg");
+  int sala = extrairCampoInt(corpo, "sala");
+  String token = extrairCampoString(corpo, "token");
+  String url = extrairCampoString(corpo, "backend_url");
+  if (sala <= 0 || token.length() == 0) {
+    server.send(400, "text/html",
+      "<meta charset='utf-8'>Arquivo inválido: os campos 'sala' e 'token' são obrigatórios. Volte e cole o JSON completo.");
+    return;
+  }
+  prefs.putInt("sala", sala);
+  prefs.putString("token", token);
+  prefs.putString("url", url);
+  server.send(200, "text/html",
+    "<meta charset='utf-8'>Provisionamento salvo (sala " + String(sala) + "). Reiniciando em 3 segundos...");
+  delay(3000);
+  ESP.restart();
+}
+
+void handleConfigReset() {
+  prefs.clear();
+  server.send(200, "text/html", "<meta charset='utf-8'>Provisionamento removido. Reiniciando...");
+  delay(2000);
+  ESP.restart();
 }
 
 
@@ -483,6 +642,25 @@ void setup() {
   delay(1000); // Pequena pausa para garantir que o Monitor Serial do computador "acorde"
   Serial.println("\n\n--- INICIANDO SISTEMA ESP32 ---");
   Serial.println("=== SCHOOL AIR — MULTI-SALA ===");
+
+  /**
+   * PROVISIONAMENTO (Fase 3): se este ESP32 foi configurado pelo portal
+   * (arquivo sala-<id>.json importado em /config), a flash NVS tem prioridade
+   * sobre as constantes do código: define a sala, o token e a URL do backend,
+   * e coloca o dispositivo em MODO PRODUÇÃO automaticamente.
+   */
+  prefs.begin("schoolair", false);
+  int salaProvisionada = prefs.getInt("sala", 0);
+  if (salaProvisionada > 0) {
+    SALA_PERTENCENTE = salaProvisionada;
+    cfgToken = prefs.getString("token", "");
+    cfgBackendUrl = prefs.getString("url", "");
+    MODO_SIMULACAO = false;
+    Serial.printf("[PROV] Dispositivo provisionado via portal: Sala %d\n", salaProvisionada);
+    if (cfgBackendUrl.length() > 0) Serial.println("[PROV] Backend: " + cfgBackendUrl);
+  } else {
+    Serial.println("[PROV] Sem provisionamento na flash — usando configuração do código.");
+  }
 
   /**
    * Exibe as configurações atuais no Serial Monitor para diagnóstico.
@@ -521,9 +699,19 @@ void setup() {
   Serial.print("DNS 2:      "); Serial.println(WiFi.dnsIP(1));
   Serial.println("---------------------------");
 
+  /**
+   * NTP (Fase 3): sincroniza o relógio via internet (fuso de Brasília, UTC-3).
+   * A hora real alimenta a curva de ocupação escolar da simulação.
+   * Se o NTP não responder, a simulação usa um "dia sintético" pelo uptime.
+   */
+  configTime(-3 * 3600, 0, "pool.ntp.org", "a.st1.ntp.br");
+
   // Mapeamento: Diz ao servidor local qual função C++ rodar para cada URL requisitada.
   server.on("/", handleRoot);
   server.on("/api", handleApiLocal);
+  server.on("/config", HTTP_GET, handleConfigForm);         // Página de provisionamento (Fase 3)
+  server.on("/config", HTTP_POST, handleConfigSalvar);
+  server.on("/config/reset", HTTP_POST, handleConfigReset);
   // Coloca o servidor efetivamente "no ar"
   server.begin();
   Serial.println("Servidor web local ativo.");
