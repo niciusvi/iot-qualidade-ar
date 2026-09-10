@@ -1,9 +1,15 @@
 # ============================================================================
-# School Air — stack completa (v2 / Fase 1)
+# School Air — stack completa e AUTOSSUFICIENTE (v2 / Fase 2)
 #
-# Sobe: PostgreSQL (dados persistentes) + backend (API) + frontend (nginx).
-# O serviço "evolution" (WhatsApp, Fase 2) fica atrás do profile "alertas":
-#   docker compose --profile alertas up -d
+# Sobe tudo que o sistema precisa, sem depender de infraestrutura externa:
+#   db        → PostgreSQL (dados do monitor + database "evolution")
+#   redis     → cache da Evolution API
+#   evolution → gateway WhatsApp (instância própria desta stack)
+#   backend   → API + motor de alertas
+#   frontend  → dashboard (nginx)
+#
+# A mesma stack roda no Portainer residencial, em uma VPS, no Azure Container
+# Apps ou no AWS ECS — basta o docker-compose.yml + variáveis de ambiente.
 #
 # No Portainer: Stacks → Add stack → Repository → URL deste repositório
 #               + caminho docker-compose.yml → definir variáveis → Deploy.
@@ -19,12 +25,48 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Cria o database "evolution" na primeira inicialização do volume
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     # Sem "ports": o banco fica acessível SÓ pela rede interna da stack.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-iaq} -d ${DB_NAME:-iaq}"]
       interval: 5s
       timeout: 3s
       retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Cache volátil da Evolution — sem persistência e sem porta no host.
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:?defina EVOLUTION_API_KEY no .env}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USER:-iaq}:${DB_PASSWORD}@db:5432/evolution?schema=public
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/0
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+      LANGUAGE: pt-BR
+    ports:
+      - "${EVOLUTION_PORT:-8081}:8080"   # Manager: http://localhost:8081/manager
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   backend:
     build: ./backend
@@ -33,6 +75,12 @@ services:
       DATABASE_URL: postgres://${DB_USER:-iaq}:${DB_PASSWORD}@db:5432/${DB_NAME:-iaq}
       PORT: 3000
       RETENCAO_DIAS: ${RETENCAO_DIAS:-90}
+      # --- Alertas WhatsApp (Fase 2) ---
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-escola}
+      ALERTA_NUMEROS: ${ALERTA_NUMEROS:-}
+      DASHBOARD_URL: ${DASHBOARD_URL:-}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
@@ -47,16 +95,6 @@ services:
     depends_on:
       - backend
 
-  # Fase 2 — gateway WhatsApp (não sobe por padrão)
-  evolution:
-    image: atendai/evolution-api:v2.1.1
-    profiles: ["alertas"]
-    restart: unless-stopped
-    environment:
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
-    volumes:
-      - evolution_data:/evolution/instances
-
 volumes:
   pgdata:
-  evolution_data:
+  evolution_instances:
