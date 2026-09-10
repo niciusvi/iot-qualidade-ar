@@ -422,8 +422,43 @@
         </div>
         <div>
           <p id="historico-sala-label" class="text-text text-sm font-medium">Histórico — Sala 1</p>
-          <p class="text-sub text-xs">Selecione outra sala na aba Dashboard para alterar.</p>
+          <p class="text-sub text-xs">Tempo real da sala selecionada, ou consulta por período no banco de dados.</p>
         </div>
+      </div>
+
+      <!-- ============================================================
+           CONSULTA AO BANCO DE DADOS (v2 — Fase 1)
+           Permite buscar leituras por data/período em qualquer sala,
+           em resolução bruta ou agregada (hora/dia), e exportar CSV.
+      ============================================================ -->
+      <div class="rounded-2xl border border-border p-5 mb-8 elevation-2" style="background:var(--color-panel);">
+        <p class="text-sub text-xs uppercase tracking-wide mb-3">Consultar período no banco de dados</p>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="text-sub text-xs block mb-1" for="hq-sala">Sala</label>
+            <select id="hq-sala" class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text"></select>
+          </div>
+          <div>
+            <label class="text-sub text-xs block mb-1" for="hq-inicio">Início</label>
+            <input type="date" id="hq-inicio" class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+          </div>
+          <div>
+            <label class="text-sub text-xs block mb-1" for="hq-fim">Fim</label>
+            <input type="date" id="hq-fim" class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+          </div>
+          <div>
+            <label class="text-sub text-xs block mb-1" for="hq-res">Resolução</label>
+            <select id="hq-res" class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
+              <option value="bruto">Leituras brutas</option>
+              <option value="hora">Média por hora</option>
+              <option value="dia">Média por dia</option>
+            </select>
+          </div>
+          <button onclick="consultarHistorico()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(124,158,247,0.15); color:#7c9ef7;">Consultar</button>
+          <button onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(129,199,132,0.12); color:#81c784;">Exportar CSV</button>
+          <button id="hq-live-btn" onclick="voltarTempoReal()" style="display:none; background:rgba(255,183,77,0.12); color:#ffb74d;" class="rounded-lg px-4 py-2 text-sm font-medium">Voltar ao tempo real</button>
+        </div>
+        <p id="hq-info" class="text-sub text-xs mt-3">Sem consulta ativa — exibindo dados em tempo real da sala selecionada.</p>
       </div>
 
       <!-- Gráficos -->
@@ -467,7 +502,7 @@
             <p class="text-text text-sm font-medium">Registros Completos</p>
             <span id="record-count" class="text-sub text-xs">— registros</span>
           </div>
-          <p class="text-sub text-xs">Últimos 50 registros</p>
+          <p id="table-mode-label" class="text-sub text-xs">Últimos 50 registros</p>
         </div>
         <div class="overflow-auto" style="max-height:480px;">
           <table class="data-table w-full border-collapse">
@@ -546,6 +581,7 @@
     let allRoomsData = {};           // Objeto que guarda dados de TODAS as salas
     let chartCO2 = null;             // Referência ao gráfico Chart.js de CO2
     let chartTempUm = null;          // Referência ao gráfico Chart.js de Temp/Umidade
+    let historicoQuery = { ativo: false, rows: null, resolucao: 'bruto' }; // Consulta ativa na aba Historico (v2)
 
     /**
      * NOMES DAS SALAS:
@@ -695,7 +731,7 @@
       }
 
       // Se abriu o Histórico, atualiza gráficos e tabela da sala selecionada
-      if (tabName === 'historico') {
+      if (tabName === 'historico' && !historicoQuery.ativo) {
         const data = allRoomsData[selectedSala];
         if (data && data.length > 0) {
           updateCharts(data);
@@ -756,7 +792,7 @@
             'Histórico — ' + SALA_NOMES[selectedSala];
 
           // Se o Histórico estiver visível, atualiza gráficos e tabela
-          if (document.getElementById('tab-historico').style.display !== 'none') {
+          if (document.getElementById('tab-historico').style.display !== 'none' && !historicoQuery.ativo) {
             if (data && data.length > 0) {
               updateCharts(data);
               updateTable(data);
@@ -928,11 +964,20 @@
     /* ===========================================================
        GRÁFICOS — Chart.js (sala selecionada)
     =========================================================== */
-    function updateCharts(data) {
-      const slice = data.slice(0, 30).reverse();
+    function updateCharts(data, maxPoints) {
+      const slice = data.slice(0, maxPoints || 30).reverse();
+
+      // Se o período exibido for maior que 24h, inclui a data no rótulo do eixo X
+      const spanMs = slice.length > 1
+        ? (new Date(slice[slice.length - 1].data) - new Date(slice[0].data)) : 0;
+      const incluiData = spanMs > 24 * 3600 * 1000;
+
       const labels = slice.map(d => {
         const dt = new Date(d.data);
-        return dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const hora = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        return incluiData
+          ? dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ' ' + hora
+          : hora;
       });
 
       const co2Data = slice.map(d => d.co2);
@@ -1021,10 +1066,13 @@
     /* ===========================================================
        TABELA DE HISTÓRICO (sala selecionada)
     =========================================================== */
-    function updateTable(data) {
-      const slice = data.slice(0, 50);
+    function updateTable(data, maxLinhas) {
+      const slice = data.slice(0, maxLinhas || 50);
       const tbody = document.getElementById('table-body');
       document.getElementById('record-count').textContent = `${slice.length} registros`;
+
+      // Formata com segurança: campo ausente/nulo vira '—' em vez de quebrar a tabela
+      const fx = (v, casas) => (v == null || isNaN(v)) ? '—' : (casas != null ? Number(v).toFixed(casas) : v);
 
       tbody.innerHTML = slice.map(d => {
         const dt = new Date(d.data);
@@ -1033,9 +1081,9 @@
         const co2Style = classCO2(d.co2) === 'critico' ? 'style="color:#e57373;"' :
           classCO2(d.co2) === 'atencao' ? 'style="color:#ffb74d;"' : '';
         return `<tr>
-          <td>${dateStr}</td><td>${d.temperatura.toFixed(1)}</td><td>${d.umidade.toFixed(1)}</td>
-          <td ${co2Style}>${d.co2}</td><td>${d.pm1}</td><td>${d.pm25}</td><td>${d.pm4}</td>
-          <td>${d.pm10}</td><td>${d.voc}</td><td>${d.nox}</td><td>${d.luz}</td></tr>`;
+          <td>${dateStr}</td><td>${fx(d.temperatura, 1)}</td><td>${fx(d.umidade, 1)}</td>
+          <td ${co2Style}>${fx(d.co2)}</td><td>${fx(d.pm1)}</td><td>${fx(d.pm25)}</td><td>${fx(d.pm4)}</td>
+          <td>${fx(d.pm10)}</td><td>${fx(d.voc)}</td><td>${fx(d.nox)}</td><td>${fx(d.luz)}</td></tr>`;
       }).join('');
     }
 
@@ -1119,7 +1167,7 @@
          * Se a aba Histórico estiver visível, atualiza gráficos e tabela.
          * Necessário porque o Chart.js não renderiza bem em elementos ocultos.
          */
-        if (document.getElementById('tab-historico').style.display !== 'none') {
+        if (document.getElementById('tab-historico').style.display !== 'none' && !historicoQuery.ativo) {
           if (currentData && currentData.length > 0) {
             updateCharts(currentData);
             updateTable(currentData);
@@ -1151,12 +1199,115 @@
     // Constrói os componentes dinâmicos da interface
     buildSalaSelector();
     buildVisaoGeral();
+    buildHistoricoControls();
 
     // Primeira busca imediata
     fetchAllRooms();
 
     // Atualização automática a cada 30 segundos (alinhado com o ESP32)
     setInterval(fetchAllRooms, INTERVALO_FETCH);
+
+
+    /* ===========================================================
+       CONSULTA DE HISTORICO NO BANCO DE DADOS (v2 — Fase 1)
+
+       Fluxo:
+       1. buildHistoricoControls() popula o seletor de salas e as
+          datas padrão (última semana) no painel de consulta.
+       2. consultarHistorico() chama /api/historico (brutos) ou
+          /api/agregado (média por hora/dia) e exibe o resultado
+          nos MESMOS gráficos e tabela da aba, marcando a consulta
+          como ativa (o tempo real para de sobrescrever a tela).
+       3. voltarTempoReal() desfaz a consulta e retoma o ao-vivo.
+       4. exportarCSV() baixa o resultado da consulta ativa (ou os
+          dados ao vivo) em CSV compatível com Excel pt-BR.
+    =========================================================== */
+    function buildHistoricoControls() {
+      const sel = document.getElementById('hq-sala');
+      sel.innerHTML = '';
+      for (let i = 1; i <= TOTAL_SALAS; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = SALA_NOMES[i];
+        sel.appendChild(opt);
+      }
+      const iso = d => d.toISOString().slice(0, 10);
+      document.getElementById('hq-fim').value = iso(new Date());
+      document.getElementById('hq-inicio').value = iso(new Date(Date.now() - 7 * 24 * 3600 * 1000));
+    }
+
+    async function consultarHistorico() {
+      const sala = Number(document.getElementById('hq-sala').value);
+      const inicio = document.getElementById('hq-inicio').value;
+      const fim = document.getElementById('hq-fim').value;
+      const res = document.getElementById('hq-res').value;
+      const info = document.getElementById('hq-info');
+
+      if (!inicio || !fim) { info.textContent = 'Informe as datas de inicio e fim.'; return; }
+      info.textContent = 'Consultando banco de dados…';
+
+      try {
+        const url = res === 'bruto'
+          ? `/api/historico?sala=${sala}&inicio=${inicio}&fim=${fim}`
+          : `/api/agregado?sala=${sala}&inicio=${inicio}&fim=${fim}&intervalo=${res}`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const json = await r.json();
+        const rows = res === 'bruto' ? json.leituras : json.buckets;
+
+        historicoQuery = { ativo: true, rows, resolucao: res, sala };
+
+        // Gráficos/tabela esperam ordem DESC (mais recente primeiro)
+        const desc = rows.slice().reverse();
+        updateCharts(desc, 300);
+        updateTable(desc, 1000);
+
+        document.getElementById('hq-live-btn').style.display = '';
+        document.getElementById('table-mode-label').textContent =
+          'Consulta: ' + inicio + ' a ' + fim + (res === 'bruto' ? '' : ' (media por ' + res + ')');
+        document.getElementById('historico-sala-label').textContent = 'Histórico — ' + SALA_NOMES[sala];
+        info.textContent = rows.length + ' registro(s) encontrado(s) no periodo.';
+      } catch (e) {
+        info.textContent = 'Falha na consulta: ' + e.message;
+      }
+    }
+
+    function voltarTempoReal() {
+      historicoQuery = { ativo: false, rows: null, resolucao: 'bruto' };
+      document.getElementById('hq-live-btn').style.display = 'none';
+      document.getElementById('table-mode-label').textContent = 'Últimos 50 registros';
+      document.getElementById('hq-info').textContent =
+        'Sem consulta ativa — exibindo dados em tempo real da sala selecionada.';
+      document.getElementById('historico-sala-label').textContent = 'Histórico — ' + SALA_NOMES[selectedSala];
+      const data = allRoomsData[selectedSala];
+      if (data && data.length > 0) { updateCharts(data); updateTable(data); }
+    }
+
+    function exportarCSV() {
+      const rows = historicoQuery.ativo ? historicoQuery.rows : (allRoomsData[selectedSala] || []);
+      if (!rows || rows.length === 0) {
+        document.getElementById('hq-info').textContent = 'Nada para exportar — faça uma consulta primeiro.';
+        return;
+      }
+      const cols = ['data', 'temperatura', 'umidade', 'co2', 'pm1', 'pm25', 'pm4', 'pm10', 'voc', 'nox', 'luz'];
+      const linhas = [cols.join(';')];
+      rows.forEach(d => {
+        linhas.push(cols.map(c => {
+          const v = d[c];
+          if (v == null) return '';
+          // Data legível; números com vírgula decimal (padrão Excel pt-BR)
+          return c === 'data' ? new Date(v).toLocaleString('pt-BR') : String(v).replace('.', ',');
+        }).join(';'));
+      });
+      const blob = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      const sala = historicoQuery.ativo ? historicoQuery.sala : selectedSala;
+      a.download = 'schoolair_sala' + sala + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   </script>
 </body>
 </html>
