@@ -298,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status:** Fases 1 a **4 (robustez: token de dispositivo, validação, buffer offline e relatório semanal) implementadas em 02/09/2026**. Resta a Fase 5 (validação com hardware real e entrega). As seções v1 deste README valem para a tag `v1-serverless`.
+> **Status:** **Todas as 5 fases do software implementadas em 02/09/2026.** Pendente apenas a validação com hardware real (checklist em [`docs/VALIDACAO.md`](docs/VALIDACAO.md)). As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -649,3 +649,30 @@ alertas e a sala com pior ar da semana. Controle de duplicidade na tabela
 `GET /api/analise?inicio=&fim=` (perfil análise+) → por sala: amostras, CO₂
 médio/máximo, horas em nível crítico e alertas no período, ranking das piores
 primeiro — os números que sustentam a discussão bem-estar × desempenho × evasão.
+
+---
+
+## 🏁 Fase 5 — Validação e entrega (implementada)
+
+### Teste end-to-end automatizado
+
+```bash
+./scripts/teste-e2e.sh
+```
+
+Sobe uma stack isolada (projeto `schoolair-e2e`, portas 3100/8180 — não conflita
+com a stack em produção), executa ~20 verificações cobrindo as Fases 1-4 e derruba
+tudo ao final. Ideal para regressão após qualquer mudança e para fechar a
+apresentação ("20 verificações, 0 falhas").
+
+### Roteiro de validação e demonstração
+
+O documento [`docs/VALIDACAO.md`](docs/VALIDACAO.md) traz:
+- o checklist de validação com **hardware real** (montagem, provisionamento da
+  11ª sala pelo portal, 1 semana de coleta, alerta real, buffer offline, perfis);
+- o **roteiro de demonstração** passo a passo para a banca;
+- a tabela de **aderência ao requisito da disciplina** (captura, processamento,
+  análise, interface web/móvel, autonomia).
+
+> ⚠️ O firmware das Fases 3-4 (provisionamento, buffer, simulação realista)
+> ainda **não foi compilado em hardware** — valide na Arduino IDE antes de gravar.
