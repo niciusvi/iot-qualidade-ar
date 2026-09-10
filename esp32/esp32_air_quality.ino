@@ -389,7 +389,7 @@ void handleApiLocal() {
  * @param json       — String JSON com os dados dos sensores
  * ============================================================================
  */
-void enviarParaVercel(int salaNumero, const char* json) {
+bool enviarParaVercel(int salaNumero, const char* json) {
   /**
    * Monta a URL completa concatenando a BASE_URL com o número da sala.
    * Exemplo: "https://...vercel.app/api/sala" + "3" = ".../api/sala3"
@@ -422,6 +422,68 @@ void enviarParaVercel(int salaNumero, const char* json) {
     salaNumero, code, ESP.getFreeHeap());
 
   http.end(); // Libera recursos de rede do microcontrolador
+  return (code >= 200 && code < 300);  // Fase 4: informa se o envio deu certo
+}
+
+
+/**
+ * ============================================================================
+ * BUFFER DE REENVIO (v2 — Fase 4)
+ *
+ * Quando o Wi-Fi cai (ou o backend não responde), as leituras do modo
+ * PRODUÇÃO não são perdidas: ficam num buffer na RAM e são reenviadas
+ * assim que a conexão volta, com o campo extra "idade_s" (segundos desde
+ * a captura) — o backend usa isso para corrigir o timestamp da medição.
+ *
+ * Capacidade: 60 leituras = 30 minutos de queda (1 leitura / 30 s).
+ * Se encher, a leitura mais antiga é descartada (a mais recente vale mais).
+ * ============================================================================
+ */
+const int MAX_PENDENTES = 60;
+struct LeituraPendente {
+  char json[360];
+  unsigned long capturadoEm;   // millis() no momento da captura
+};
+LeituraPendente pendentes[MAX_PENDENTES];
+int qtdPendentes = 0;
+
+/** Guarda uma leitura que falhou no envio (descarta a mais antiga se cheio). */
+void guardarPendente(const char* json) {
+  if (qtdPendentes >= MAX_PENDENTES) {
+    for (int i = 1; i < MAX_PENDENTES; i++) pendentes[i - 1] = pendentes[i];
+    qtdPendentes = MAX_PENDENTES - 1;
+  }
+  strncpy(pendentes[qtdPendentes].json, json, sizeof(pendentes[0].json) - 1);
+  pendentes[qtdPendentes].json[sizeof(pendentes[0].json) - 1] = 0;
+  pendentes[qtdPendentes].capturadoEm = millis();
+  qtdPendentes++;
+  Serial.printf("[BUFFER] Leitura guardada para reenvio (%d pendentes)\n", qtdPendentes);
+}
+
+/** Reenvia leituras pendentes (máx. 5 por ciclo, para não travar o loop). */
+void reenviarPendentes() {
+  if (qtdPendentes == 0 || WiFi.status() != WL_CONNECTED) return;
+  int enviados = 0;
+  while (qtdPendentes > 0 && enviados < 5) {
+    unsigned long idade = (millis() - pendentes[0].capturadoEm) / 1000UL;
+    char json[420];
+    strncpy(json, pendentes[0].json, sizeof(json) - 1);
+    json[sizeof(json) - 1] = 0;
+    size_t len = strlen(json);
+    // Injeta "idade_s" antes da chave final do JSON: {...} → {...,"idade_s":N}
+    if (len > 0 && len < sizeof(json) - 24 && json[len - 1] == '}') {
+      snprintf(json + len - 1, sizeof(json) - len + 1, ",\"idade_s\":%lu}", idade);
+    }
+    if (!enviarParaVercel(SALA_PERTENCENTE, json)) break;  // rede caiu de novo: para
+    for (int i = 1; i < qtdPendentes; i++) pendentes[i - 1] = pendentes[i];
+    qtdPendentes--;
+    enviados++;
+    yield();
+    server.handleClient();
+  }
+  if (enviados > 0) {
+    Serial.printf("[BUFFER] %d leituras reenviadas, restam %d\n", enviados, qtdPendentes);
+  }
 }
 
 
@@ -880,13 +942,27 @@ void loop() {
           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"co2\":%d,\"pm1\":%d,\"pm25\":%d,\"pm4\":%d,\"pm10\":%d,\"voc\":%d,\"nox\":%d,\"luz\":%d}",
           t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
 
-        enviarParaVercel(SALA_PERTENCENTE, json);
+        if (enviarParaVercel(SALA_PERTENCENTE, json)) {
+          reenviarPendentes();        // Fase 4: rede ok — aproveita e esvazia o buffer
+        } else {
+          guardarPendente(json);      // Fase 4: falhou — guarda para reenviar depois
+        }
       }
 
       enviandoVercel = false;
 
     } else {
-      Serial.println("Erro: Wi-Fi desconectado, não foi possível enviar à Vercel.");
+      Serial.println("Erro: Wi-Fi desconectado, não foi possível enviar.");
+      WiFi.reconnect();   // Fase 4: tenta recuperar a conexão sozinho
+
+      if (!MODO_SIMULACAO) {
+        // Fase 4: guarda a leitura atual no buffer em vez de perdê-la
+        char json[500];
+        snprintf(json, sizeof(json),
+          "{\"temperatura\":%.1f,\"umidade\":%.1f,\"co2\":%d,\"pm1\":%d,\"pm25\":%d,\"pm4\":%d,\"pm10\":%d,\"voc\":%d,\"nox\":%d,\"luz\":%d}",
+          t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
+        guardarPendente(json);
+      }
     }
   }
 
