@@ -1,0 +1,62 @@
+# ============================================================================
+# School Air — stack completa (v2 / Fase 1)
+#
+# Sobe: PostgreSQL (dados persistentes) + backend (API) + frontend (nginx).
+# O serviço "evolution" (WhatsApp, Fase 2) fica atrás do profile "alertas":
+#   docker compose --profile alertas up -d
+#
+# No Portainer: Stacks → Add stack → Repository → URL deste repositório
+#               + caminho docker-compose.yml → definir variáveis → Deploy.
+# ============================================================================
+services:
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-iaq}
+      POSTGRES_USER: ${DB_USER:-iaq}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Sem "ports": o banco fica acessível SÓ pela rede interna da stack.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-iaq} -d ${DB_NAME:-iaq}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-iaq}:${DB_PASSWORD}@db:5432/${DB_NAME:-iaq}
+      PORT: 3000
+      RETENCAO_DIAS: ${RETENCAO_DIAS:-90}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - backend
+
+  # Fase 2 — gateway WhatsApp (não sobe por padrão)
+  evolution:
+    image: atendai/evolution-api:v2.1.1
+    profiles: ["alertas"]
+    restart: unless-stopped
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+    volumes:
+      - evolution_data:/evolution/instances
+
+volumes:
+  pgdata:
+  evolution_data:
