@@ -291,3 +291,129 @@ Scan finalizado.
 ```
 
 Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou alimentação incorreta (5V vs 3.3V).
+
+---
+
+## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
+
+> **Status: em desenvolvimento.** As seções acima descrevem o sistema **atual (v1)**. Esta seção documenta o que está aprovado e será implementado na v2.
+
+### Onde cada parte roda — v1 vs v2
+
+| Componente | Hoje (v1) | v2 (planejado) |
+|---|---|---|
+| **Backend/API** | Funções serverless na Vercel (`api/salaN.js`) | Container **Node.js (Express)** no Docker — roda no Portainer residencial e é portável para Azure Container Apps (ACA) ou AWS ECS sem mudança de código |
+| **Banco de dados** | Memória RAM volátil da função (perde tudo no cold start) | **PostgreSQL em container** com volume Docker nomeado (dados persistem a restart/rebuild) |
+| **Frontend** | Vercel (estático) | **Vercel OU container nginx** no Docker — os dois a partir do mesmo repositório |
+| **Alertas** | Não existem | Container **Evolution API** → WhatsApp |
+| **ESP32** | Só envia dados (HTTP POST a cada 30 s) | Idem + recebe arquivo de provisionamento gerado pelo portal |
+
+> **Importante:** o portal **não depende** do ESP32 para funcionar. O ESP32 apenas envia leituras para a API; o dashboard lê da API/banco. Se o ESP32 desligar, o portal continua no ar (mostrando os últimos dados gravados). O mini servidor web local do firmware (porta 80) é apenas para debug/configuração local.
+
+### 1. Alertas WhatsApp com níveis por tempo de exposição
+
+Regras de disparo (persistência da condição antes de alertar):
+
+| Condição | Limiar | Tempo máx. até o alerta |
+|---|---|---|
+| Parâmetro crítico (PM2.5 > 35 µg/m³, VOC > 200, temp/umidade fora da faixa crítica) | conforme painel | **10 minutos** |
+| **CO₂ ALTO** | > 1500 ppm | **5 minutos** |
+| **CO₂ CRÍTICO** (risco de sonolência intensa/mal-estar/desmaio) | > 3000 ppm | **1 minuto** |
+
+- Anti-spam: no máximo 1 alerta por sala a cada 30 min; mensagem de "normalizado" quando a condição cessa.
+- Envio via **Evolution API** (`/message/sendText/{instancia}`) para os números e grupos cadastrados no portal.
+- Cada disparo é gravado na tabela `alertas` (histórico de incidentes visível no dashboard).
+
+### 2. Portal — contas de acesso e perfis de permissão
+
+Login com usuário/senha (hash bcrypt + sessão JWT). Três perfis:
+
+| Perfil | Permissões |
+|---|---|
+| **Visualização** | Vê dashboards e histórico (somente leitura) |
+| **Análise** | Visualização + download das métricas (CSV) |
+| **Administração** | Tudo + cadastrar salas, números de WhatsApp e usuários |
+
+### 3. Cadastro de destinatários WhatsApp
+
+Tela no portal (perfil Administração) para gerenciar quem recebe alertas:
+- Número individual ou ID de grupo do WhatsApp;
+- Nome/descrição, ativo/inativo e (opcional) quais salas cada destinatário acompanha;
+- Persistido na tabela `destinatarios` do banco.
+
+### 4. Provisionamento de novas salas (arquivo importável no ESP32)
+
+Fluxo para adicionar uma sala **pelo portal**, sem editar código:
+
+1. Admin cadastra a sala no portal → backend cria o registro e gera um **token único do dispositivo**;
+2. O portal disponibiliza para download o arquivo `sala-<id>.json` contendo: URL do backend, id da sala, token de autenticação e intervalo de envio;
+3. O arquivo é **importado no ESP32 novo** pela página web local do firmware (upload) e salvo na memória flash (NVS/LittleFS);
+4. O ESP32 reinicia e começa a transmitir; a sala **aparece automaticamente** no dashboard — a lista de salas passará a vir de `GET /api/salas` (fim do `TOTAL_SALAS` fixo no HTML).
+
+> Quando a v2 for implementada, este fluxo substitui o processo manual de copiar arquivos `salaN.js` descrito na seção "Como Adicionar ou Remover Salas".
+
+### 5. Simulação realista
+
+O modo simulação continuará com 10 salas, mas com dados verossímeis em vez de `random()` puro:
+- **Random-walk com inércia**: cada leitura varia pouco em relação à anterior (temperatura não pula de 20 °C para 33 °C em 30 s);
+- **Curva de ocupação escolar**: CO₂ sobe gradualmente durante a aula e cai nos intervalos/fins de dia;
+- **Episódios programados de CO₂ alto e crítico** em salas específicas, para validar os dois níveis de alerta;
+- Depois, uma **11ª sala real** será adicionada pelo portal para validar o arquivo de provisionamento no ESP32.
+
+### 6. Deploy — Docker (Portainer) e Vercel a partir do mesmo repositório
+
+Nova estrutura do repositório (v2):
+
+```
+backend/    → API Node.js (Express) + Dockerfile
+frontend/   → HTML/JS estático + Dockerfile (nginx) + vercel.json
+esp32/      → firmware
+docker-compose.yml
+```
+
+**docker-compose.yml (esqueleto):**
+
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: iaq
+      POSTGRES_USER: iaq
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://iaq:${DB_PASSWORD}@db:5432/iaq
+      JWT_SECRET: ${JWT_SECRET}
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: escola
+    ports: ["3000:3000"]
+    depends_on: [db]
+  evolution:
+    image: atendai/evolution-api:latest
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+    volumes:
+      - evolution_data:/evolution/instances
+  frontend:
+    build: ./frontend
+    ports: ["8080:80"]
+    depends_on: [backend]
+volumes:
+  pgdata:
+  evolution_data:
+```
+
+**No Portainer residencial:** *Stacks → Add stack → Repository* → apontar a URL do repositório Git e o caminho do `docker-compose.yml` → definir as variáveis de ambiente → *Deploy*. Para atualizar, basta *re-pull* (ou configurar o webhook de auto-update do Portainer). O volume `pgdata` garante que o banco sobrevive a atualizações.
+
+**Na Vercel (frontend):** no projeto, definir *Root Directory* = `frontend/` (deploy estático). O `frontend/vercel.json` fará *rewrite* de `/api/*` para a URL pública do backend residencial.
+
+**Regra de ouro:** o frontend sempre chama `/api` com caminho **relativo**. Quem resolve o destino é o ambiente — o nginx (proxy reverso para o container `backend`) no Docker, ou o *rewrite* do `vercel.json` na Vercel. Zero mudança de código entre ambientes.
+
+**Exposição pública do backend residencial:** recomendado **Cloudflare Tunnel** (gratuito, HTTPS automático, sem abrir portas no roteador) → ex.: `https://api.seu-dominio.com`. É essa URL que o ESP32 (POST) e o frontend na Vercel (rewrite) usarão. Alternativa: port-forward + Nginx Proxy Manager + DDNS.
+
+**Portabilidade para ACA/ECS:** o backend é *stateless* (todo estado no Postgres) e configurado 100% por variáveis de ambiente (12-factor). Para migrar, sobe-se a mesma imagem no ACA/ECS e troca-se apenas a `DATABASE_URL` para um Postgres gerenciado (Azure Database / RDS).

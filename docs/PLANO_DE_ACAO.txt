@@ -1,0 +1,74 @@
+*PLANO DE AÇÃO v2 – PROJETO INTEGRADOR UNIVESP*
+Monitoramento Ambiental IoT – Qualidade do Ar em Salas de Aula
+Revisado em 02/09/2026, incorporando as decisões do orientador.
+
+*1. REQUISITO DA DISCIPLINA*
+"Desenvolver um sistema IoT com captura, análise e processamento de dados. O sistema pode ser tanto autônomo quanto ter uma interface web ou por dispositivo móvel."
+
+Como o projeto atende:
+- Captura: ESP32 + Sensirion SEN5x (PM, VOC, NOx, temp, umidade), SCD4x (CO2) e LDR. Leitura a cada 30 s.
+- Processamento: backend em Docker recebe, valida, autentica e grava em PostgreSQL.
+- Análise: classificação IAQ, histórico por data/período, agregações, detecção de condição ruim persistente e alertas automáticos em níveis.
+- Interface: portal web com login e perfis de acesso + alerta no celular via WhatsApp.
+- Autônomo: alertas funcionam sem ninguém olhar o painel.
+
+*2. DECISÕES DO ORIENTADOR (02/09/2026)*
+- Tempos de alerta: 10 min para parâmetros críticos em geral; CO2 ALTO (> 1500 ppm) alerta em no máx 5 min; CO2 CRÍTICO (> 3000 ppm, risco de mal-estar/desmaio) alerta em no máx 1 min.
+- Alertas vão para números/grupos de WhatsApp cadastrados pelo portal.
+- Portal terá login com 3 perfis: Visualização (só ver), Análise (ver + baixar métricas CSV), Administração (tudo + cadastrar salas, números e usuários).
+- Nova sala é criada pelo portal, que gera um arquivo de configuração para importar no ESP32 novo.
+- Continua com 10 salas simuladas, com variação realista (inércia, curva de ocupação, episódios de CO2 alto/crítico). Depois, uma 11ª sala real valida o provisionamento.
+- Backend e banco em Docker (Portainer residencial), portáveis para ACA/ECS. Frontend publicável na Vercel E no Docker, a partir do mesmo repositório.
+
+*3. NOVA ARQUITETURA*
+ESP32 (sensores) → HTTP POST → Backend Node.js (Docker) → PostgreSQL (Docker, volume persistente)
+Backend → regras de alerta → Evolution API (Docker) → WhatsApp
+Portal web (Vercel ou Docker/nginx) → GET → Backend
+Exposição pública do backend residencial via Cloudflare Tunnel (HTTPS gratuito, sem abrir portas).
+O portal NÃO depende do ESP32: se o dispositivo desligar, o site continua no ar com os últimos dados gravados.
+
+*4. FASES*
+
+*FASE 1 – Infraestrutura Docker + banco + histórico (3 semanas)*
+- Reestruturar o repositório: backend/, frontend/, esp32/, docker-compose.yml.
+- Backend Node.js (Express) substituindo as funções serverless; PostgreSQL com volume persistente.
+- Tabelas: salas, leituras (índice por sala + data_hora), com retenção de brutos por 90 dias e agregados por hora permanentes.
+- Rotas: POST de ingestão, GET tempo real, GET /api/historico?sala=&inicio=&fim=, GET agregações, GET /api/salas.
+- Tela Histórico no portal: sala + intervalo de datas, gráfico, tabela e exportação CSV.
+- Deploy no Portainer (stack apontando para o repositório) + Cloudflare Tunnel.
+
+*FASE 2 – Alertas WhatsApp em níveis (2 semanas)*
+- Evolution API em container, instância pareada com número dedicado.
+- Motor de regras: crítico geral 10 min; CO2 > 1500 ppm em 5 min; CO2 > 3000 ppm em 1 min.
+- Anti-spam (1 alerta/sala/30 min) + mensagem de normalização.
+- Tabela alertas + painel de incidentes no portal.
+
+*FASE 3 – Portal: contas, destinatários e provisionamento (3 semanas)*
+- Login (bcrypt + JWT) com perfis Visualização / Análise / Administração.
+- Tela de cadastro de destinatários WhatsApp (números e grupos, ativo/inativo).
+- Cadastro de salas pelo portal → gera arquivo sala-<id>.json (URL do backend, id, token do dispositivo, intervalo) → importado no ESP32 pela página web local do firmware e salvo na flash.
+- Dashboard dinâmico: lista de salas vinda da API (sem número fixo no código).
+- Simulação realista no firmware: random-walk com inércia, curva de ocupação escolar e episódios programados de CO2 alto/crítico.
+
+*FASE 4 – Robustez e análise (1 a 2 semanas)*
+- Autenticação por token no POST do ESP32 e validação dos campos.
+- Buffer local no ESP32 para quedas de Wi-Fi.
+- Relatório semanal automático por WhatsApp (médias, horas em nível crítico, ranking de salas).
+- Análises para o relatório final: horas críticas por sala, horários de pico, comparação entre salas.
+
+*FASE 5 – Validação e entrega (1 a 2 semanas)*
+- Provisionar a 11ª sala pelo portal e validar o arquivo em um ESP32 real.
+- Testes: alerta em cada nível, consulta por período, queda de conexão, perfis de acesso.
+- Documentação final (README + diagrama) e apresentação com demo.
+
+*5. CRONOGRAMA*
+Semanas 1-3: Fase 1 | Semanas 4-5: Fase 2 | Semanas 6-8: Fase 3 | Semanas 9-10: Fase 4 | Semanas 11-12: Fase 5
+Total: ~12 semanas a partir de setembro/2026.
+
+*6. CUSTO*
+Servidor residencial próprio (Docker/Portainer) + Vercel gratuito + Evolution API open source + Cloudflare Tunnel gratuito. Hardware: ESP32 + SEN55 + SCD41 ≈ R$ 400-600 por sala real.
+
+*7. RISCOS*
+- Bloqueio do número WhatsApp (API não oficial): número dedicado, anti-spam, plano B via Telegram/e-mail.
+- Disponibilidade do servidor residencial: monitorar uptime; a arquitetura permite migrar para ACA/ECS trocando só variáveis de ambiente.
+- Segurança ao expor o backend: HTTPS via tunnel, token nos dispositivos, senha forte + JWT no portal.
