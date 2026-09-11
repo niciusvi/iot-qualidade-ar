@@ -704,3 +704,27 @@ precisam ser reprovisionados (baixar o arquivo de novo e recolar em `/config`).
 > → nginx da stack (fala com o backend por dentro) e `api.seu-dominio.com` → backend
 > com Access, usado **somente** pelos ESP32. O Manager da Evolution (`:8081`) nunca
 > deve ganhar hostname público.
+
+---
+
+## 🧪 Modo desenvolvimento: alertas pelo gateway n8n existente
+
+Para desenvolver sem parear um número de WhatsApp dedicado, o backend tem um modo
+gateway: se a variável `N8N_WEBHOOK_URL` estiver definida, os envios saem como
+`POST { numero, texto }` para esse webhook do n8n — que entrega pela Evolution já
+existente do ambiente — em vez da Evolution da própria stack.
+
+```
+# DEV  → alertas saem pelo gateway n8n (Evolution pessoal do ambiente)
+N8N_WEBHOOK_URL=http://SEU-N8N:5678/webhook/<path-do-ramo>
+
+# PROD → deixe vazia: tudo sai pela Evolution da própria stack (comportamento padrão)
+N8N_WEBHOOK_URL=
+```
+
+- Em DEV não é preciso subir `evolution`/`redis`: `docker compose up -d db backend frontend`
+  (o `.env` ainda precisa de `EVOLUTION_API_KEY` preenchida com qualquer valor, o compose exige).
+- Detalhe de semântica: no modo gateway, "enviado" na aba Incidentes significa
+  "aceito pelo n8n" — a entrega final acontece de forma assíncrona no workflow.
+- Nada mais muda entre os modos: regras de alerta, incidentes, relatório e portal
+  são idênticos; a chave só troca o transporte da mensagem.

@@ -32,6 +32,15 @@ const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 const EVOLUTION_INSTANCE = process.env.EVOLUTION_INSTANCE || 'escola';
 const DASHBOARD_URL = process.env.DASHBOARD_URL || '';
 
+/**
+ * MODO GATEWAY (desenvolvimento):
+ * Se N8N_WEBHOOK_URL estiver definida, os envios NÃO vão para a Evolution da
+ * stack — vão como POST { numero, texto } para esse webhook do n8n, que faz a
+ * entrega pela Evolution já existente do ambiente. Em produção a variável fica
+ * vazia e tudo funciona pela Evolution própria da stack, como sempre.
+ */
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
+
 const COOLDOWN_MIN = 30;        // 1 alerta a cada 30 min por sala/parâmetro/nível
 const GAP_MAX_SEG = 180;        // intervalo > 3 min entre leituras quebra a "sequência ruim"
 
@@ -99,7 +108,8 @@ export async function enviarWhatsApp(texto) {
     resultado.erros.push('nenhum destinatário cadastrado');
     return resultado;
   }
-  if (!EVOLUTION_API_KEY) {
+  const usaGateway = N8N_WEBHOOK_URL.length > 0;
+  if (!usaGateway && !EVOLUTION_API_KEY) {
     resultado.erros.push('EVOLUTION_API_KEY não configurada');
     return resultado;
   }
@@ -109,11 +119,17 @@ export async function enviarWhatsApp(texto) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10000);
       const resp = await fetch(
-        `${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(EVOLUTION_INSTANCE)}`,
+        usaGateway
+          ? N8N_WEBHOOK_URL
+          : `${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(EVOLUTION_INSTANCE)}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
-          body: JSON.stringify({ number: d.numero, text: texto }),
+          headers: usaGateway
+            ? { 'Content-Type': 'application/json' }
+            : { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+          body: usaGateway
+            ? JSON.stringify({ numero: d.numero, texto })          // contrato do gateway n8n
+            : JSON.stringify({ number: d.numero, text: texto }),   // contrato da Evolution
           signal: controller.signal,
         }
       );

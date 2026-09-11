@@ -89,6 +89,9 @@ services:
       # Cloudflare Access — Service Token da frota de ESP32 (opcional)
       CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:-}
       CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:-}
+      # DEV: se definida, os envios de WhatsApp saem por este webhook do n8n
+      # em vez da Evolution da stack (produção deixa vazia)
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
