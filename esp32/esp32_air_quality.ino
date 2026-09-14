@@ -89,15 +89,17 @@ int SALA_PERTENCENTE = 1;
 const int TOTAL_SALAS = 10;
 
 /**
- * --- CONFIGURAÇÃO DE REDE ESTÁTICA ---
- * Descomente as linhas abaixo caso precise contornar problemas de DHCP (ex: Sophos Firewall).
- * IMPORTANTE: No C++, a classe IPAddress usa VÍRGULAS (,) para separar os octetos, não pontos (.).
+ * --- CONFIGURAÇÃO DE REDE ESTÁTICA (OPCIONAL) ---
+ * O padrão é DHCP: o roteador entrega o IP e nada precisa ser mexido aqui.
+ * Só descomente este bloco (e o WiFi.config no setup) se precisar de IP fixo,
+ * trocando os X pelos octetos reais.
+ * IMPORTANTE: a classe IPAddress usa VÍRGULAS (,) entre os octetos, não pontos.
  */
-IPAddress local_IP(192, 168, X, X);
-IPAddress gateway(192, 168, X, X);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, X, X);
-IPAddress secondaryDNS(8, 8, 8, 8);
+// IPAddress local_IP(192, 168, X, X);
+// IPAddress gateway(192, 168, X, X);
+// IPAddress subnet(255, 255, 255, 0);
+// IPAddress primaryDNS(192, 168, X, X);
+// IPAddress secondaryDNS(8, 8, 8, 8);
 
 // Credenciais da rede Wi-Fi
 const char* ssid = "xxxxxx";
@@ -749,12 +751,12 @@ void setup() {
   }
 
   /**
-   * Se usar IP Fixo, este bloco deve estar DESCOMENTADO e vir ANTES do WiFi.begin().
-   * Ele aplica a configuração de rede bypassando o servidor DHCP do roteador.
+   * IP FIXO (opcional): se descomentou o bloco de rede estática lá em cima,
+   * descomente também estas linhas — elas precisam vir ANTES do WiFi.begin().
    */
-  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("Falha ao configurar IP Estático!");
-  }
+  // if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+  //   Serial.println("Falha ao configurar IP Estático!");
+  // }
 
   // Inicia a tentativa de conexão Wi-Fi
   WiFi.begin(ssid, password);

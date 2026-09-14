@@ -728,3 +728,32 @@ N8N_WEBHOOK_URL=
   "aceito pelo n8n" — a entrega final acontece de forma assíncrona no workflow.
 - Nada mais muda entre os modos: regras de alerta, incidentes, relatório e portal
   são idênticos; a chave só troca o transporte da mensagem.
+
+---
+
+## 🔌 Gravando o firmware num ESP32 zerado (primeira vez, via USB)
+
+Um ESP32 recém-comprado não tem nada dentro — antes de provisionar pela página
+`/config`, é preciso gravar o firmware do projeto **uma única vez**:
+
+1. **Arduino IDE 2.x** instalada ([arduino.cc/en/software](https://www.arduino.cc/en/software)).
+2. **Suporte às placas ESP32**: *File → Preferences → Additional boards manager URLs* →
+   cole `https://espressif.github.io/arduino-esp32/package_esp32_index.json` →
+   depois *Tools → Board → Boards Manager* → instale **"esp32 by Espressif Systems"**.
+3. **Driver USB** (se o computador não criar a porta COM ao plugar o cabo):
+   a maioria das DevKit usa chip **CP210x** ou **CH340** — instale o driver correspondente.
+   Use um cabo USB **de dados** (cabo só-carga é a causa nº 1 de "não aparece porta").
+4. Abra `esp32/esp32_air_quality.ino` e edite só duas linhas:
+   `ssid` e `password` do Wi-Fi. (IP fixo é opcional e vem comentado; DHCP é o padrão.
+   `BASE_URL` só importa no modo simulação — no modo produção a URL vem do provisionamento.)
+5. *Tools → Board* → **ESP32 Dev Module** (ou "DOIT ESP32 DEVKIT V1") e selecione a porta COM.
+6. **Upload** (seta →). Se aparecer `Failed to connect… Connecting…`, segure o botão
+   **BOOT** da placa durante a tentativa de conexão e solte quando começar a gravar.
+7. Abra o **Serial Monitor a 115200 baud**: na inicialização o ESP32 imprime o
+   `IP Local` — é esse IP que você usa em `http://IP-DO-ESP32/config` para colar
+   o `sala-<id>.json` baixado do portal.
+
+> Bibliotecas: no **modo simulação** não precisa instalar nenhuma (WiFi, HTTPClient,
+> WebServer e Preferences já vêm com o core ESP32). As bibliotecas da Sensirion
+> (SEN5x/SCD4x) só entram quando os sensores físicos forem ligados — as linhas
+> estão comentadas no `.ino` com instruções.
