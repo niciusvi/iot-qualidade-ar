@@ -273,8 +273,9 @@
     body[data-menu="fechado"] .side-label { display: none; }
     #menu-lateral nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; flex: 1; }
     .sidebar-rodape { padding: 8px; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 6px; }
+    /* Movimento reduzido: universal, como promete a DESIGN.md */
     @media (prefers-reduced-motion: reduce) {
-      body, #menu-lateral { transition: none; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
 
     /* Valores de leitura e tabelas em mono: leitura de instrumento */
@@ -368,6 +369,16 @@
     body:has(#login-overlay[style*="display:flex"]),
     body:has(#login-overlay[style*="display: flex"]) { overflow: hidden; }
 
+    /* Foco visível universal — o contrato da DESIGN.md, agora implementado */
+    :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 2px; }
+
+    /* Cartões da Visão Geral agora são <button>: reset para manter o visual */
+    button.sala-overview-card { font: inherit; color: inherit; text-align: left; width: 100%; display: block; }
+
+    /* Loader que gira de verdade enquanto o cartão carrega */
+    @keyframes girar { to { transform: rotate(360deg); } }
+    svg.lucide-loader { animation: girar 1.2s linear infinite; }
+
     /* Chip de status */
     .status-chip {
       font-size: 11px; font-weight: 500;
@@ -427,7 +438,7 @@
        LOGIN (v2 — Fase 3): o portal exige autenticação.
        Perfis: visualizacao / analise / admin.
   ============================================================ -->
-  <div id="login-overlay" style="position:fixed; inset:0; z-index:100; background:var(--color-bg); display:flex; align-items:center; justify-content:center;">
+  <div id="login-overlay" role="dialog" aria-modal="true" aria-label="Acesso ao portal" style="position:fixed; inset:0; z-index:100; background:var(--color-bg); display:flex; align-items:center; justify-content:center;">
     <div class="rounded-2xl border border-border p-8 elevation-3" style="background:var(--color-panel); width:340px;">
       <div class="flex items-center gap-3 mb-6">
         <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:rgba(107,157,248,0.15);">
@@ -438,17 +449,19 @@
           <p class="text-sub text-xs">Acesso ao portal</p>
         </div>
       </div>
-      <label class="text-sub text-xs block mb-1" for="login-usuario">Usuário</label>
-      <input id="login-usuario" type="text" autocomplete="username"
-             class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
-      <label class="text-sub text-xs block mb-1" for="login-senha">Senha</label>
-      <input id="login-senha" type="password" autocomplete="current-password"
-             class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
-      <button onclick="fazerLogin()" class="w-full rounded-lg px-4 py-2 text-sm font-medium"
-              style="background:rgba(107,157,248,0.2); color:var(--color-accent);">Entrar</button>
+      <form id="login-form">
+        <label class="text-sub text-xs block mb-1" for="login-usuario">Usuário</label>
+        <input id="login-usuario" type="text" autocomplete="username" autofocus
+               class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
+        <label class="text-sub text-xs block mb-1" for="login-senha">Senha</label>
+        <input id="login-senha" type="password" autocomplete="current-password"
+               class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
+        <button type="submit" class="w-full rounded-lg px-4 py-2 text-sm font-medium"
+                style="background:rgba(107,157,248,0.2); color:var(--color-accent);">Entrar</button>
+      </form>
       <button onclick="esqueciSenha()" class="w-full text-center text-xs mt-3"
               style="color:var(--color-sub); background:none; border:none; cursor:pointer;">Esqueci minha senha</button>
-      <p id="login-erro" class="text-xs mt-2" style="color:var(--color-vermelho); min-height:16px;"></p>
+      <p id="login-erro" role="alert" class="text-xs mt-2" style="color:var(--color-vermelho); min-height:16px;"></p>
     </div>
   </div>
 
@@ -471,10 +484,10 @@
     </div>
 
     <nav>
-      <button id="btn-visao" class="nav-btn" onclick="showTab('visao')" title="Visão Geral">
+      <button id="btn-visao" class="nav-btn active" onclick="showTab('visao')" title="Visão Geral">
         <i data-lucide="grid-3x3" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Visão Geral</span>
       </button>
-      <button id="btn-dashboard" class="nav-btn active" onclick="showTab('dashboard')" title="Dashboard">
+      <button id="btn-dashboard" class="nav-btn" onclick="showTab('dashboard')" title="Dashboard">
         <i data-lucide="layout-dashboard" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Dashboard</span>
       </button>
       <button id="btn-historico" class="nav-btn" onclick="showTab('historico')" title="Histórico">
@@ -503,7 +516,7 @@
     <span class="text-sub text-xs">Monitor Ambiental Escolar</span>
     <div class="flex flex-nowrap items-center gap-3 text-xs text-sub">
       <div class="live-dot"></div>
-      <span id="last-update-label">Aguardando dados…</span>
+      <span id="last-update-label" aria-live="polite">Aguardando dados…</span>
       <button onclick="alternarTema()" title="Alternar tema claro/escuro"
               class="w-7 h-7 flex items-center justify-center rounded"
               style="background:rgba(107,157,248,0.12); color:var(--color-accent);">
@@ -523,7 +536,7 @@
          Grid com 10 cards mostrando o status resumido de cada sala.
          Ao clicar em um card, navega para o Dashboard daquela sala.
     ============================================================ -->
-    <div id="tab-visao" style="display:none;" class="animate-fade-in">
+    <div id="tab-visao" class="animate-fade-in">
 
       <div class="mb-6">
         <h2 class="text-2xl font-bold mb-2">Visão Geral — Todas as Salas</h2>
@@ -540,7 +553,7 @@
     <!-- ============================================================
          ABA 2: DASHBOARD (atualizada com seletor de sala)
     ============================================================ -->
-    <div id="tab-dashboard" class="animate-fade-in">
+    <div id="tab-dashboard" style="display:none;" class="animate-fade-in">
 
       <!-- SELETOR DE SALA — Botões pill horizontais -->
       <div class="mb-6">
@@ -563,7 +576,7 @@
             <p id="hero-sala-label" class="text-sub text-xs uppercase tracking-widest mb-1">
               Sala 1 — Qualidade do Ar Interno (IAQ)
             </p>
-            <h1 id="hero-status" class="text-4xl font-bold tracking-tight mb-1"
+            <h1 id="hero-status" aria-live="polite" class="text-4xl font-bold tracking-tight mb-1"
                 style="color:var(--color-verde);">
               Excelente
             </h1>
@@ -591,7 +604,7 @@
           </div>
           <div>
             <p id="val-co2" class="text-5xl font-bold" style="letter-spacing:-0.01em;">—</p>
-            <p class="text-sub mt-2" style="font-size:11px; opacity:0.75;">ideal &lt;1000 · alerta &gt;1500 · crítico &gt;3000 ppm</p>
+            <p class="text-sub mt-2" style="font-size:11px;">ideal &lt;1000 · alerta &gt;1500 · crítico &gt;3000 ppm</p>
           </div>
         </div>
         <div class="sensor-card">
@@ -717,7 +730,7 @@
           <button id="btn-csv" onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(110,192,122,0.12); color:var(--color-verde);">Exportar CSV</button>
           <button id="hq-live-btn" onclick="voltarTempoReal()" style="display:none; background:rgba(232,163,61,0.12); color:var(--color-ambar);" class="rounded-lg px-4 py-2 text-sm font-medium">Voltar ao tempo real</button>
         </div>
-        <p id="hq-info" class="text-sub text-xs mt-3">Sem consulta ativa — exibindo dados em tempo real da sala selecionada.</p>
+        <p id="hq-info" aria-live="polite" class="text-sub text-xs mt-3">Sem consulta ativa — exibindo dados em tempo real da sala selecionada.</p>
       </div>
 
       <!-- Gráficos -->
@@ -1004,6 +1017,7 @@
       AUTH = null;
       try { localStorage.removeItem('schoolair_auth'); } catch (e) {}
       document.getElementById('login-overlay').style.display = 'flex';
+      try { document.getElementById('login-usuario').focus(); } catch (e) {}
     }
 
     function logout() { encerrarSessao(); location.reload(); }
@@ -1029,8 +1043,22 @@
       } catch (e) { erro.textContent = 'Erro de conexão: ' + e.message; }
     }
 
-    document.getElementById('login-senha').addEventListener('keydown',
-      (e) => { if (e.key === 'Enter') fazerLogin(); });
+    document.getElementById('login-form').addEventListener('submit',
+      (e) => { e.preventDefault(); fazerLogin(); });
+
+    // Prende o foco dentro do overlay de login enquanto ele está aberto
+    document.getElementById('login-overlay').addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focaveis = document.getElementById('login-overlay').querySelectorAll('input, button');
+      const primeiro = focaveis[0], ultimo = focaveis[focaveis.length - 1];
+      if (e.shiftKey && document.activeElement === primeiro) { e.preventDefault(); ultimo.focus(); }
+      else if (!e.shiftKey && document.activeElement === ultimo) { e.preventDefault(); primeiro.focus(); }
+    });
+
+    // Enter em qualquer campo da consulta de histórico dispara o Consultar
+    ['hq-inicio', 'hq-fim', 'hq-sala'].forEach(id =>
+      document.getElementById(id).addEventListener('keydown',
+        (e) => { if (e.key === 'Enter') consultarHistorico(); }));
 
     /** Recuperação de senha: envia uma senha temporária ao WhatsApp do usuário. */
     async function esqueciSenha() {
@@ -1216,6 +1244,10 @@
       // Exibe a aba escolhida e ativa o botão
       document.getElementById('tab-' + tabName).style.display = 'block';
       document.getElementById('btn-' + tabName).classList.add('active');
+      ['visao', 'dashboard', 'historico', 'incidentes', 'config'].forEach(n => {
+        const b = document.getElementById('btn-' + n);
+        if (b) b.setAttribute('aria-current', n === tabName ? 'page' : 'false');
+      });
 
       // Se abriu a Visão Geral, atualiza os cards de status de todas as salas
       if (tabName === 'visao') {
@@ -1313,7 +1345,8 @@
 
       for (const s of SALAS) {
         const i = s.id;
-        const card = document.createElement('div');
+        const card = document.createElement('button');
+        card.type = 'button';
         card.className = 'sala-overview-card';
         card.id = 'overview-card-' + i;
         card.innerHTML = `
@@ -1383,6 +1416,19 @@
         tempText.textContent = latest.temperatura.toFixed(1) + '°C';
         co2Text.textContent = latest.co2 + ' ppm';
       }
+
+      // Crítico primeiro: a sala que precisa de ação sobe para o topo
+      const ordem = { critico: 0, atencao: 1, excelente: 2 };
+      const grade = document.getElementById('salas-grid');
+      Array.from(grade.children)
+        .map(el => {
+          const id = Number(el.id.replace('overview-card-', ''));
+          const dados = allRoomsData[id];
+          const r = (dados && dados.length) ? ordem[calcIAQ(dados[0]).status] : 3;
+          return { el, r, id };
+        })
+        .sort((a, b) => a.r - b.r || a.id - b.id)
+        .forEach(x => grade.appendChild(x.el));
 
       lucide.createIcons();
     }
@@ -1655,6 +1701,7 @@
       buildSalaSelector();
       buildVisaoGeral();
       buildHistoricoControls();
+      showTab('visao');   // a pergunta nº 1 se responde na chegada
       fetchAllRooms();
       lucide.createIcons();
     }
