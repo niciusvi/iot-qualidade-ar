@@ -4,9 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>School Air — Monitor Ambiental Escolar</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b9df8' stroke-width='2' stroke-linecap='round'><path d='M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2'/><path d='M9.6 4.6A2 2 0 1 1 11 8H2'/><path d='M12.6 19.4A2 2 0 1 0 14 16H2'/></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 
   <!-- Google Fonts: IBM Plex Sans (UI) + IBM Plex Mono (leituras numéricas) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,15 +66,15 @@
     }
 
     const chipAtivo = (on) => on
-      ? '<span style="color:var(--color-verde);">ativa</span>'
-      : '<span style="color:var(--color-vermelho);">inativa</span>';
+      ? '<span style="color:var(--color-accent);">ativa</span>'
+      : '<span style="color:var(--color-muted);">inativa</span>';
     const btnMini = (rotulo, cor, fn) =>
       `<button onclick="${fn}" class="rounded px-2 py-1" style="background:rgba(${cor},0.12); color:rgb(${cor}); font-size:11px; white-space:nowrap;">${rotulo}</button>`;
 
     function renderCfgSalas(salas) {
       document.getElementById('cfg-salas-body').innerHTML = salas.map(s => `<tr>
         <td>${s.id}</td><td>${s.nome}</td><td>${chipAtivo(s.ativa)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '107,157,248', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', s.ativa ? '224,92,92' : '110,192,122', `alternarSala(${s.id}, ${!s.ativa})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '107,157,248', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', '107,157,248', `alternarSala(${s.id}, ${!s.ativa})`)}</div></td>
       </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhuma sala.</td></tr>';
     }
 
@@ -118,7 +119,7 @@
     function renderCfgDestinatarios(dest) {
       document.getElementById('cfg-dest-body').innerHTML = dest.map(d => `<tr>
         <td>${d.nome || '—'}</td><td>${d.numero}</td><td>${chipAtivo(d.ativo)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini(d.ativo ? 'desativar' : 'reativar', d.ativo ? '224,92,92' : '110,192,122', `alternarDestinatario(${d.id}, ${!d.ativo})`)}${btnMini('remover', '224,92,92', `removerDestinatario(${d.id})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini(d.ativo ? 'desativar' : 'reativar', '107,157,248', `alternarDestinatario(${d.id}, ${!d.ativo})`)}${btnMini('remover', '224,92,92', `removerDestinatario(${d.id}, '${d.numero}')`)}</div></td>
       </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhum destinatário — os alertas não serão entregues.</td></tr>';
     }
 
@@ -146,8 +147,8 @@
       carregarConfig();
     }
 
-    async function removerDestinatario(id) {
-      if (!confirm('Remover este destinatário?')) return;
+    async function removerDestinatario(id, numero) {
+      if (!confirm('Remover o destinatário ' + (numero || id) + '?')) return;
       await authFetch('/api/destinatarios/' + id, { method: 'DELETE' });
       mostrarAviso('Destinatário removido.');
       carregarConfig();
@@ -164,7 +165,7 @@
               onchange="alterarTelefoneUsuario(${u.id}, this.value)" title="Número ou grupo p/ recuperação de senha"
               class="bg-surface border border-border rounded px-2 py-1 text-xs text-text" style="width:145px;"></td>
         <td>${chipAtivo(u.ativo)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini(u.ativo ? 'desativar' : 'reativar', u.ativo ? '224,92,92' : '110,192,122', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '224,92,92', `removerUsuario(${u.id})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini(u.ativo ? 'desativar' : 'reativar', '107,157,248', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '224,92,92', `removerUsuario(${u.id}, '${u.usuario}')`)}</div></td>
       </tr>`).join('');
     }
 
@@ -216,8 +217,8 @@
       carregarConfig();
     }
 
-    async function removerUsuario(id) {
-      if (!confirm('Excluir este usuário?')) return;
+    async function removerUsuario(id, login) {
+      if (!confirm('Excluir o usuário "' + (login || id) + '"?')) return;
       const r = await authFetch('/api/usuarios/' + id, { method: 'DELETE' });
       if (!r.ok) alert((await r.json()).erro || 'Falha');
       carregarConfig();
@@ -227,7 +228,7 @@
   <style>
     /* =========================================================
        ESTILOS GLOBAIS
-       Material Design Dark Theme:
+       Tema escuro do instrumento:
        - Fundo var(--color-bg) com superfícies progressivamente mais claras
        - Texto branco com opacidade (87% primário, 60% secundário)
        - Elevação representada por luminosidade
@@ -298,9 +299,9 @@
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: var(--color-surface); }
     ::-webkit-scrollbar-thumb { background: var(--color-muted); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: #666; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
-    /* Elevações Material */
+    /* Elevações (uso restrito: login e hover) */
     .elevation-2 { box-shadow: none; }
     .elevation-3 { box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
 
@@ -444,11 +445,6 @@
     .sala-overview-card:hover {
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       transform: translateY(-2px);
-    }
-    /* Barra superior colorida nos cards de visão geral */
-    .sala-overview-card .top-bar {
-      position: absolute; top: 0; left: 0; right: 0;
-      height: 3px; transition: background 0.5s;
     }
   </style>
 </head>
@@ -596,7 +592,7 @@
 
       <!-- HERO CARD — Status geral de IAQ da sala selecionada -->
       <div id="hero-card"
-           class="relative overflow-hidden rounded-2xl border border-border mb-8 elevation-3 transition-all duration-500"
+           class="relative overflow-hidden rounded-2xl border border-border mb-8 transition-all duration-500"
            style="background:var(--color-panel);">
         <div class="relative px-8 py-7 flex flex-col sm:flex-row items-start sm:items-center gap-6">
           <div id="hero-icon-wrap"
@@ -984,7 +980,7 @@
         <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(107,157,248,0.15);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg></div>
         <span class="text-lg font-medium tracking-tight whitespace-nowrap">School <span style="color:var(--color-accent);">Air</span></span>
       </div>
-      <span class="text-sub text-xs">10 Salas Monitoradas</span>
+      <span id="footer-salas" class="text-sub text-xs">— salas monitoradas</span>
     </div>
   </footer>
 
@@ -1211,13 +1207,13 @@
 
     /* ===========================================================
        MAPEAMENTO DE STATUS → ESTILOS VISUAIS
-       Cores Material Design 300 (pastéis para dark mode)
+       Vocabulário visual dos estados (fundo tintado 12% + cor cheia)
     =========================================================== */
     const STATUS_STYLES = {
       excelente: {
         color: 'var(--color-verde)', bgColor: 'rgba(110,192,122,0.12)',
         barColor: 'var(--color-verde)', label: 'Excelente', icon: 'check-circle',
-        badgeBg: 'rgba(110,192,122,0.12)', badgeColor: 'var(--color-verde)', badgeText: 'Ótimo',
+        badgeBg: 'rgba(110,192,122,0.12)', badgeColor: 'var(--color-verde)', badgeText: 'Excelente',
       },
       atencao: {
         color: 'var(--color-ambar)', bgColor: 'rgba(232,163,61,0.12)',
@@ -1226,7 +1222,7 @@
       },
       critico: {
         color: 'var(--color-vermelho)', bgColor: 'rgba(224,92,92,0.12)',
-        barColor: 'var(--color-vermelho)', label: 'Crítica / Prejudicial', icon: 'shield-alert',
+        barColor: 'var(--color-vermelho)', label: 'Crítico', icon: 'shield-alert',
         badgeBg: 'rgba(224,92,92,0.12)', badgeColor: 'var(--color-vermelho)', badgeText: 'Crítico',
       },
       obsoleto: {
@@ -1264,9 +1260,16 @@
         { name: 'VOC', status: classVOC(data.voc), val: `${data.voc}`, threshold: 'índice acima de 200' },
       ];
 
+      const ACAO = {
+        'CO₂': 'Ventile a sala agora: abra janelas e portas.',
+        'Temperatura': 'Ajuste a climatização da sala.',
+        'Umidade': 'Ajuste a ventilação da sala.',
+        'PM2.5': 'Ventile e verifique fontes de poeira ou fumaça.',
+        'VOC': 'Ventile e verifique produtos químicos em uso.',
+      };
       const critical = params.find(p => p.status === 'critico');
       if (critical) {
-        return { status: 'critico', reason: `${critical.name} (${critical.val}) está acima do limite seguro — ${critical.threshold}. Risco à saúde e ao desempenho cognitivo.` };
+        return { status: 'critico', reason: `${critical.name} (${critical.val}) acima do limite seguro — ${critical.threshold}. ${ACAO[critical.name] || 'Risco à saúde e ao desempenho cognitivo.'}` };
       }
       const warn = params.find(p => p.status === 'atencao');
       if (warn) {
@@ -1657,7 +1660,10 @@
     function updateTable(data, maxLinhas) {
       const slice = data.slice(0, maxLinhas || 50);
       const tbody = document.getElementById('table-body');
-      document.getElementById('record-count').textContent = `${slice.length} registros`;
+      document.getElementById('record-count').textContent =
+        slice.length === data.length
+          ? `${slice.length} registros`
+          : `${slice.length} de ${data.length} registros`;
 
       // Formata com segurança: campo ausente/nulo vira '—' em vez de quebrar a tabela
       const fx = (v, casas) => (v == null || isNaN(v)) ? '—' : (casas != null ? Number(v).toFixed(casas) : v);
@@ -1751,6 +1757,9 @@
       if (!SALAS.find(s => s.id === selectedSala)) {
         selectedSala = SALAS.length > 0 ? SALAS[0].id : null;
       }
+      try {
+        document.getElementById('footer-salas').textContent = SALAS.length + ' salas monitoradas';
+      } catch (e) {}
     }
 
     /** Ajusta a interface conforme o perfil logado. */
@@ -1823,7 +1832,10 @@
         sel.appendChild(opt);
       }
       if (selectedSala) sel.value = selectedSala;
-      const iso = d => d.toISOString().slice(0, 10);
+      const iso = d => {
+        const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 10);
+      };
       document.getElementById('hq-fim').value = iso(new Date());
       document.getElementById('hq-inicio').value = iso(new Date(Date.now() - 7 * 24 * 3600 * 1000));
     }
@@ -1836,6 +1848,7 @@
       const info = document.getElementById('hq-info');
 
       if (!inicio || !fim) { info.textContent = 'Informe as datas de inicio e fim.'; return; }
+      if (inicio > fim) { info.textContent = 'A data inicial não pode ser depois da final.'; return; }
       info.textContent = 'Consultando banco de dados…';
 
       try {
@@ -1927,6 +1940,7 @@
        Busca em /api/alertas o histórico de alertas disparados no
        WhatsApp e renderiza a tabela da aba Incidentes.
     =========================================================== */
+    const NOME_NIVEL = { critico: 'Crítico', alto: 'Alto' };
     const NOME_PARAMETRO = {
       co2: 'CO₂', pm25: 'PM2.5', voc: 'VOC',
       temperatura: 'Temperatura', umidade: 'Umidade',
@@ -1942,7 +1956,7 @@
 
         if (alertas.length === 0) {
           tbody.innerHTML = '<tr><td colspan="7" class="text-center py-10 text-sub text-sm">' +
-            'Nenhum incidente registrado. 🎉</td></tr>';
+            'Nenhum incidente registrado.</td></tr>';
           return;
         }
 
@@ -1961,7 +1975,7 @@
             '<td>' + quando + '</td>' +
             '<td>' + (a.sala_nome || ('Sala ' + a.sala)) + '</td>' +
             '<td>' + (NOME_PARAMETRO[a.parametro] || a.parametro) + '</td>' +
-            '<td style="color:' + nivelCor + '; font-weight:500;">' + a.nivel + '</td>' +
+            '<td style="color:' + nivelCor + '; font-weight:500;">' + (NOME_NIVEL[a.nivel] || a.nivel) + '</td>' +
             '<td>' + (a.valor == null ? '—' : a.valor) + '</td>' +
             '<td>' + envio + '</td>' +
             '<td>' + norm + '</td>' +
