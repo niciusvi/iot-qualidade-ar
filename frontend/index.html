@@ -89,22 +89,23 @@
         const sala = await r.json();
         document.getElementById('cfg-sala-nome').value = '';
         await baixarProvisionamento(sala.id);   // baixa o arquivo do ESP32 na hora
-        mostrarAviso('Sala criada — arquivo de provisionamento baixado.');
+        mostrarAviso('Sala criada — firmware da sala baixado.');
         carregarConfig();
         carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
       } else { alert((await r.json()).erro || 'Falha ao criar sala'); }
     }
 
     async function baixarProvisionamento(id) {
-      const r = await authFetch('/api/salas/' + id + '/provisionamento');
-      if (!r.ok) { alert('Falha ao gerar o arquivo'); return; }
+      // Baixa o FIRMWARE completo da sala: serve para uma placa vazia, sempre.
+      const r = await authFetch('/api/salas/' + id + '/firmware');
+      if (!r.ok) { alert('Falha ao gerar o firmware'); return; }
       const blob = await r.blob();
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = 'sala-' + id + '.json';
+      a.download = 'sala-' + id + '.ino';
       document.body.appendChild(a); a.click(); a.remove();
-      mostrarAviso('Arquivo sala-' + id + '.json baixado.');
-      document.getElementById('prov-arquivo').textContent = 'sala-' + id + '.json';
+      mostrarAviso('Firmware sala-' + id + '.ino baixado.');
+      document.getElementById('prov-arquivo').textContent = 'sala-' + id + '.ino';
       document.getElementById('dialogo-provisionamento').showModal();
     }
 
@@ -569,22 +570,23 @@
   <!-- Instruções de provisionamento: abre automaticamente após o download -->
   <dialog id="dialogo-provisionamento" aria-labelledby="prov-titulo">
     <p id="prov-titulo" class="text-text text-sm font-medium mb-1">
-      Arquivo <span id="prov-arquivo" class="prov-code">sala-N.json</span> baixado — e agora?
+      Firmware <span id="prov-arquivo" class="prov-code">sala-N.ino</span> baixado — e agora?
     </p>
-    <p class="text-sub text-xs">Este arquivo configura o ESP32 novo como o nó desta sala. Para importar:</p>
+    <p class="text-sub text-xs">Este arquivo é o firmware completo da sala — serve para um
+      <strong>ESP32 vazio, recém-comprado</strong>: sala, chave do dispositivo e endereço do
+      servidor já vêm embutidos.</p>
     <ol class="prov-passos">
-      <li><strong>Ligue o ESP32 com o firmware do projeto gravado</strong> e conectado ao Wi-Fi.
-          ESP32 zerado (recém-comprado)? Grave o firmware uma única vez via USB —
-          passo a passo na seção <strong>"Gravando o firmware"</strong> do README.</li>
-      <li><strong>Descubra o IP dele</strong>: aparece no Monitor Serial da Arduino IDE ao iniciar
-          (linha "IP Local"), ou na lista de dispositivos do roteador.</li>
-      <li>No navegador, abra <span class="prov-code">http://IP-DO-ESP32/config</span>.</li>
-      <li><strong>Abra o arquivo baixado num editor de texto</strong> (Bloco de Notas serve),
-          copie <strong>todo</strong> o conteúdo, cole no formulário e clique em
-          <strong>Salvar e reiniciar</strong>.</li>
+      <li><strong>Abra o arquivo na Arduino IDE</strong> (primeira vez na IDE? o passo a passo
+          de preparação está na seção <strong>"Gravando o firmware"</strong> do README).</li>
+      <li><strong>Preencha só o Wi-Fi</strong>: as linhas <span class="prov-code">ssid</span> e
+          <span class="prov-code">password</span> no topo do arquivo.</li>
+      <li>Conecte o ESP32 no USB e clique em <strong>Upload</strong>
+          (se falhar a conexão, segure o botão <strong>BOOT</strong> da placa).</li>
+      <li>Pronto — a placa reinicia já como o nó desta sala e as leituras aparecem no painel.</li>
     </ol>
-    <p class="text-sub text-xs mb-4">O dispositivo reinicia já como o nó da sala e as leituras
-      começam a aparecer no painel. ⚠ O arquivo contém o token do dispositivo — não o compartilhe.</p>
+    <p class="text-sub text-xs mb-4">Placa que já tem o firmware genérico? Dá para configurar sem
+      recompilar: abra <span class="prov-code">http://IP-DO-ESP32/config</span> e cole o JSON de
+      provisionamento. ⚠ O arquivo contém a chave do dispositivo — não o compartilhe.</p>
     <div class="flex justify-end">
       <button onclick="document.getElementById('dialogo-provisionamento').close()"
               class="rounded-lg px-4 py-2 text-sm font-medium"

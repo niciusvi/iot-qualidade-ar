@@ -1,19 +1,18 @@
 # ============================================================================
 # Backend School Air — Node.js 22 (Alpine)
-# Imagem stateless: todo o estado vive no PostgreSQL (12-factor).
-# A mesma imagem roda no Portainer residencial, no Azure Container Apps
-# ou no AWS ECS — muda apenas a variável de ambiente DATABASE_URL.
+# Contexto de build = RAIZ do repositório (ver docker-compose.yml), para o
+# backend embarcar o fonte do firmware e gerar o sala-N.ino pré-configurado.
+# Stateless: todo o estado vive no PostgreSQL (12-factor).
 # ============================================================================
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Instala dependências primeiro (camada cacheável)
-COPY package*.json ./
+COPY backend/package*.json ./
 RUN npm ci --omit=dev || npm install --omit=dev
 
-# Copia o código
-COPY src ./src
+COPY backend/src ./src
+COPY esp32 ./esp32
 
 ENV NODE_ENV=production
 EXPOSE 3000

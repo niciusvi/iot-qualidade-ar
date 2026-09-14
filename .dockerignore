@@ -1,0 +1,8 @@
+**/node_modules
+.git
+.impeccable
+.env
+docs
+scripts
+frontend
+db-init

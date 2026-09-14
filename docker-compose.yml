@@ -69,7 +69,9 @@ services:
         condition: service_started
 
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${DB_USER:-iaq}:${DB_PASSWORD}@db:5432/${DB_NAME:-iaq}

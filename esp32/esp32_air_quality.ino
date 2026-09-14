@@ -82,6 +82,17 @@ bool MODO_SIMULACAO = true;
 int SALA_PERTENCENTE = 1;
 
 /**
+ * PROVISIONAMENTO EMBUTIDO (não edite à mão):
+ * Quando este arquivo é baixado pelo portal (botão "firmware" da sala), os três
+ * valores abaixo já vêm preenchidos — a placa vazia só precisa do Wi-Fi acima
+ * e do Upload. Zerados (como no repositório), o firmware se comporta como o
+ * genérico: modo simulação, ou provisionamento pela página /config.
+ */
+const int   SALA_COMPILADA = 0;      // 0 = nenhum provisionamento embutido
+const char* TOKEN_COMPILADO = "";
+const char* BACKEND_COMPILADO = "";  // ex.: https://sa-backend.univesp.dev
+
+/**
  * TOTAL_SALAS:
  * Número total de salas da escola.
  * Usado no modo simulação para saber quantos POSTs enviar por ciclo.
@@ -736,8 +747,15 @@ void setup() {
     MODO_SIMULACAO = false;
     Serial.printf("[PROV] Dispositivo provisionado via portal: Sala %d\n", salaProvisionada);
     if (cfgBackendUrl.length() > 0) Serial.println("[PROV] Backend: " + cfgBackendUrl);
+  } else if (SALA_COMPILADA > 0) {
+    // Provisionamento embutido pelo portal: placa vazia já nasce configurada
+    SALA_PERTENCENTE = SALA_COMPILADA;
+    cfgToken = TOKEN_COMPILADO;
+    cfgBackendUrl = BACKEND_COMPILADO;
+    MODO_SIMULACAO = false;
+    Serial.printf("[PROV] Provisionamento embutido no firmware: Sala %d\n", SALA_COMPILADA);
   } else {
-    Serial.println("[PROV] Sem provisionamento na flash — usando configuração do código.");
+    Serial.println("[PROV] Sem provisionamento — usando configuração genérica do código.");
   }
 
   /**

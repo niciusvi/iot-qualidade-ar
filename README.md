@@ -571,15 +571,19 @@ autenticam por token próprio (header `X-Device-Token`, reforçado na Fase 4).
 - **Usuários**: criar contas com perfil, ativar/desativar/remover (o sistema impede
   o admin de rebaixar/excluir a própria conta).
 
-### Provisionando um ESP32 novo (fluxo completo)
+### Provisionando um ESP32 (fluxo completo)
 
-1. Admin cria a sala na aba Configurações → o arquivo `sala-<id>.json` baixa na hora
-   (contém id da sala, token do dispositivo, URL do backend de `PUBLIC_BACKEND_URL` e intervalo);
-2. Liga o ESP32 novo e acessa a página local dele: `http://IP-DO-ESP32/config`;
-3. Cola o conteúdo do arquivo no formulário e salva — o ESP32 grava tudo na flash
-   (NVS, sobrevive a reboot) e **reinicia já em modo produção como nó daquela sala**,
-   enviando o token no header `X-Device-Token`.
-   Para desfazer: botão "Limpar provisionamento" na mesma página.
+**Placa vazia (o caso padrão):** o admin cria a sala na aba Configurações e o portal
+baixa na hora um **`sala-<id>.ino`** — o firmware completo com id da sala, token do
+dispositivo e URL do backend (`PUBLIC_BACKEND_URL`) já embutidos. É só abrir na
+Arduino IDE, preencher o Wi-Fi (`ssid`/`password`) e dar Upload: a placa nasce em
+modo produção como nó daquela sala, enviando o token no header `X-Device-Token`.
+Um diálogo com esse passo a passo abre automaticamente após o download.
+
+**Placa que já tem o firmware genérico:** dá para configurar sem recompilar — a rota
+`GET /api/salas/<id>/provisionamento` continua gerando o `sala-<id>.json`; basta
+colar o conteúdo em `http://IP-DO-ESP32/config` (NVS tem prioridade sobre o
+embutido). Para desfazer: "Limpar provisionamento" na mesma página.
 
 ### Simulação realista (firmware)
 
@@ -757,3 +761,7 @@ Um ESP32 recém-comprado não tem nada dentro — antes de provisionar pela pág
 > WebServer e Preferences já vêm com o core ESP32). As bibliotecas da Sensirion
 > (SEN5x/SCD4x) só entram quando os sensores físicos forem ligados — as linhas
 > estão comentadas no `.ino` com instruções.
+
+> **Atalho:** se a sala já existe no portal, baixe o `sala-<id>.ino` pela aba
+> Configurações — ele já vem com sala, token e servidor embutidos, e os passos
+> acima se resumem a preencher o Wi-Fi e gravar.

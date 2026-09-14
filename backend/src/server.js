@@ -22,6 +22,7 @@ import express from 'express';
 import { pool, initDb, RETENCAO_DIAS } from './db.js';
 import { avaliarAlertas } from './alertas.js';
 import crypto from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { login, exigirPerfil, seedAdmin, hashSenha } from './auth.js';
 import { jobRelatorioSemanal, montarRelatorioSemanal, estatisticasPeriodo } from './relatorio.js';
 import { enviarWhatsApp, enviarTextoPara } from './alertas.js';
@@ -573,6 +574,33 @@ app.get('/api/salas/:id(\\d+)/provisionamento', exigirPerfil('admin'), async (re
       cf_access_client_id: process.env.CF_ACCESS_CLIENT_ID || '',
       cf_access_client_secret: process.env.CF_ACCESS_CLIENT_SECRET || '',
     });
+  } catch (err) { next(err); }
+});
+
+/**
+ * Firmware pré-configurado para PLACA VAZIA: devolve o esp32_air_quality.ino
+ * com sala, token e URL do backend já embutidos. O usuário só preenche o
+ * Wi-Fi na Arduino IDE e grava — nenhum passo extra de provisionamento.
+ */
+app.get('/api/salas/:id(\\d+)/firmware', exigirPerfil('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const { rows } = await pool.query('SELECT id, nome, token FROM salas WHERE id = $1', [id]);
+    if (rows.length === 0) return res.status(404).json({ erro: 'Sala não encontrada' });
+    let { token } = rows[0];
+    if (!token) {
+      token = crypto.randomBytes(24).toString('hex');
+      await pool.query('UPDATE salas SET token = $2 WHERE id = $1', [id, token]);
+    }
+    const fonte = await readFile(new URL('../esp32/esp32_air_quality.ino', import.meta.url), 'utf8');
+    const custom = fonte
+      .replace('const int   SALA_COMPILADA = 0;', `const int   SALA_COMPILADA = ${id};`)
+      .replace('const char* TOKEN_COMPILADO = "";', `const char* TOKEN_COMPILADO = "${token}";`)
+      .replace('const char* BACKEND_COMPILADO = "";',
+        `const char* BACKEND_COMPILADO = "${process.env.PUBLIC_BACKEND_URL || ''}";`);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="sala-${id}.ino"`);
+    res.send(custom);
   } catch (err) { next(err); }
 });
 
