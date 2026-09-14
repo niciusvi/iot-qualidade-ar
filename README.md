@@ -580,10 +580,18 @@ Arduino IDE, preencher o Wi-Fi (`ssid`/`password`) e dar Upload: a placa nasce e
 modo produção como nó daquela sala, enviando o token no header `X-Device-Token`.
 Um diálogo com esse passo a passo abre automaticamente após o download.
 
-**Placa que já tem o firmware genérico:** dá para configurar sem recompilar — a rota
-`GET /api/salas/<id>/provisionamento` continua gerando o `sala-<id>.json`; basta
-colar o conteúdo em `http://IP-DO-ESP32/config` (NVS tem prioridade sobre o
-embutido). Para desfazer: "Limpar provisionamento" na mesma página.
+**Placa já usada em outra sala, ou trocando a rede Wi-Fi:** tudo sem recompilar,
+pela página local `http://IP-DO-ESP32/config` — cole o `sala-<id>.json` da nova
+sala (rota `GET /api/salas/<id>/provisionamento`) e/ou informe a nova rede, que
+fica salva na flash (se a rede nova falhar em 30 s, a placa volta sozinha para a
+rede do código). NVS tem prioridade sobre o embutido; "Limpar provisionamento"
+desfaz tudo.
+
+**Perdeu a rede por completo** (roteador trocado, SSID/senha mudados)? Sem pânico e
+sem USB: depois de 90 s sem conectar em nenhuma rede, a placa entra em **modo de
+recuperação** — cria o Wi-Fi `SchoolAir-Sala<N>` (senha `arescolar123`) com a mesma
+página `/config` em `http://192.168.4.1`. Conecte um celular nesse Wi-Fi, salve a
+rede nova e a placa reinicia normalmente.
 
 ### Simulação realista (firmware)
 

@@ -336,10 +336,11 @@
     }
     #dialogo-provisionamento::backdrop { background: rgba(0, 0, 0, 0.55); }
     .prov-passos {
-      list-style: decimal; margin: 12px 0 4px 18px;
+      list-style: decimal; margin: 14px 0 14px 18px;
       display: flex; flex-direction: column; gap: 10px;
       font-size: 13px; color: var(--color-sub); line-height: 1.5;
     }
+    .prov-nota { line-height: 1.5; margin-bottom: 8px; }
     .prov-passos strong { color: var(--color-text); font-weight: 500; }
     .prov-code {
       font-family: 'IBM Plex Mono', monospace; font-size: 12px;
@@ -569,24 +570,36 @@
 
   <!-- Instruções de provisionamento: abre automaticamente após o download -->
   <dialog id="dialogo-provisionamento" aria-labelledby="prov-titulo">
-    <p id="prov-titulo" class="text-text text-sm font-medium mb-1">
+    <p id="prov-titulo" class="text-text text-sm font-medium mb-2">
       Firmware <span id="prov-arquivo" class="prov-code">sala-N.ino</span> baixado — e agora?
     </p>
-    <p class="text-sub text-xs">Este arquivo é o firmware completo da sala — serve para um
+    <p class="text-sub text-xs prov-nota">Este arquivo é o firmware completo da sala — serve para um
       <strong>ESP32 vazio, recém-comprado</strong>: sala, chave do dispositivo e endereço do
       servidor já vêm embutidos.</p>
     <ol class="prov-passos">
-      <li><strong>Abra o arquivo na Arduino IDE</strong> (primeira vez na IDE? o passo a passo
-          de preparação está na seção <strong>"Gravando o firmware"</strong> do README).</li>
+      <li><strong>Abra o arquivo na Arduino IDE</strong> — primeira vez gravando um ESP32?
+          Prepare a IDE com o
+          <a href="https://randomnerdtutorials.com/installing-esp32-arduino-ide-2-0/"
+             target="_blank" rel="noopener"
+             style="color:var(--color-accent); text-decoration:underline;">guia de instalação do suporte ESP32</a>
+          (ou o <a href="https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html"
+             target="_blank" rel="noopener"
+             style="color:var(--color-accent); text-decoration:underline;">guia oficial da Espressif</a>).</li>
       <li><strong>Preencha só o Wi-Fi</strong>: as linhas <span class="prov-code">ssid</span> e
           <span class="prov-code">password</span> no topo do arquivo.</li>
       <li>Conecte o ESP32 no USB e clique em <strong>Upload</strong>
           (se falhar a conexão, segure o botão <strong>BOOT</strong> da placa).</li>
       <li>Pronto — a placa reinicia já como o nó desta sala e as leituras aparecem no painel.</li>
     </ol>
-    <p class="text-sub text-xs mb-4">Placa que já tem o firmware genérico? Dá para configurar sem
-      recompilar: abra <span class="prov-code">http://IP-DO-ESP32/config</span> e cole o JSON de
-      provisionamento. ⚠ O arquivo contém a chave do dispositivo — não o compartilhe.</p>
+    <p class="text-sub text-xs prov-nota">Placa já usada em outra sala, ou precisa trocar a rede
+      Wi-Fi? Não é preciso regravar: abra <span class="prov-code">http://IP-DO-ESP32/config</span>
+      no navegador — lá dá para colar o provisionamento da nova sala e/ou salvar a nova rede.</p>
+    <p class="text-sub text-xs prov-nota">E se a placa perder a rede por completo (roteador trocado,
+      senha mudada), ela cria sozinha o Wi-Fi de recuperação
+      <span class="prov-code">SchoolAir-SalaN</span> (senha <span class="prov-code">arescolar123</span>):
+      conecte o celular nele e abra <span class="prov-code">http://192.168.4.1/config</span>.</p>
+    <p class="text-sub text-xs prov-nota" style="margin-bottom:16px;">⚠ Este arquivo contém a chave
+      do dispositivo — não o compartilhe.</p>
     <div class="flex justify-end">
       <button onclick="document.getElementById('dialogo-provisionamento').close()"
               class="rounded-lg px-4 py-2 text-sm font-medium"

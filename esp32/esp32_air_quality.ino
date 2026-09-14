@@ -671,7 +671,11 @@ void handleConfigForm() {
     "<h1>Provisionamento da Sala</h1>"
     "<p>Cole abaixo o conteúdo do arquivo <b>sala-&lt;id&gt;.json</b> baixado do portal (aba Configurações).</p>"
     "<form method='POST' action='/config'>"
+    "<p style='margin-bottom:6px'>Provisionamento da sala (opcional se só for trocar a rede):</p>"
     "<textarea name='cfg' placeholder='{ conteudo do arquivo sala-N.json }'></textarea>"
+    "<p style='margin:14px 0 6px'>Trocar a rede Wi-Fi (opcional — em branco mantém a atual):</p>"
+    "<input name='wifi_ssid' placeholder='Nome da rede (SSID)' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:8px;padding:10px;margin-bottom:8px;'>"
+    "<input name='wifi_senha' type='password' placeholder='Senha da rede' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:8px;padding:10px;'>"
     "<br><button class='salvar' type='submit'>Salvar e reiniciar</button></form>"
     "<form method='POST' action='/config/reset' style='display:inline'>"
     "<button class='reset' type='submit'>Limpar provisionamento</button></form>"
@@ -683,29 +687,49 @@ void handleConfigForm() {
   } else {
     pagina += "não provisionado (usando configuração do código-fonte)";
   }
+  String ws = prefs.getString("wssid", "");
+  if (ws.length() > 0) pagina += " · Wi-Fi salvo: " + ws;
   pagina += "</div></body></html>";
   server.send(200, "text/html", pagina);
 }
 
 void handleConfigSalvar() {
   String corpo = server.arg("cfg");
-  int sala = extrairCampoInt(corpo, "sala");
-  String token = extrairCampoString(corpo, "token");
-  String url = extrairCampoString(corpo, "backend_url");
-  String cfid = extrairCampoString(corpo, "cf_access_client_id");
-  String cfsec = extrairCampoString(corpo, "cf_access_client_secret");
-  if (sala <= 0 || token.length() == 0) {
+  String novoSsid = server.arg("wifi_ssid");
+  String novaSenha = server.arg("wifi_senha");
+  bool temJson = corpo.length() > 0;
+  bool temWifi = novoSsid.length() > 0;
+
+  if (!temJson && !temWifi) {
     server.send(400, "text/html",
-      "<meta charset='utf-8'>Arquivo inválido: os campos 'sala' e 'token' são obrigatórios. Volte e cole o JSON completo.");
+      "<meta charset='utf-8'>Nada para salvar: cole o JSON da sala e/ou informe a nova rede Wi-Fi.");
     return;
   }
-  prefs.putInt("sala", sala);
-  prefs.putString("token", token);
-  prefs.putString("url", url);
-  prefs.putString("cfid", cfid);    // Cloudflare Access (vazio se o Access não estiver em uso)
-  prefs.putString("cfsec", cfsec);
+
+  String resumo = "";
+  if (temJson) {
+    int sala = extrairCampoInt(corpo, "sala");
+    String token = extrairCampoString(corpo, "token");
+    String url = extrairCampoString(corpo, "backend_url");
+    if (sala <= 0 || token.length() == 0) {
+      server.send(400, "text/html",
+        "<meta charset='utf-8'>Arquivo inválido: os campos 'sala' e 'token' são obrigatórios. Volte e cole o JSON completo.");
+      return;
+    }
+    prefs.putInt("sala", sala);
+    prefs.putString("token", token);
+    prefs.putString("url", url);
+    resumo += "sala " + String(sala);
+  }
+  if (temWifi) {
+    prefs.putString("wssid", novoSsid);
+    prefs.putString("wsenha", novaSenha);
+    if (resumo.length() > 0) resumo += " + ";
+    resumo += "rede " + novoSsid;
+  }
   server.send(200, "text/html",
-    "<meta charset='utf-8'>Provisionamento salvo (sala " + String(sala) + "). Reiniciando em 3 segundos...");
+    "<meta charset='utf-8'>Salvo (" + resumo + "). Reiniciando em 3 segundos... "
+    "Se a nova rede não conectar em 30 s, a placa volta para a rede anterior sozinha.");
   delay(3000);
   ESP.restart();
 }
@@ -776,15 +800,46 @@ void setup() {
   //   Serial.println("Falha ao configurar IP Estático!");
   // }
 
-  // Inicia a tentativa de conexão Wi-Fi
-  WiFi.begin(ssid, password);
+  /**
+   * REDE WI-FI EM TRÊS CAMADAS:
+   *   1. Rede salva pela página /config (flash NVS) — prioridade;
+   *   2. Se ela falhar por 30 s, volta para a rede compilada no código;
+   *   3. Se NENHUMA conectar em 90 s (roteador trocado, senha mudada), a placa
+   *      vira um PONTO DE ACESSO de recuperação: Wi-Fi "SchoolAir-SalaN"
+   *      (senha arescolar123) com o /config em http://192.168.4.1 — dá para
+   *      corrigir a rede pelo celular, sem USB e sem regravar.
+   */
+  String wifiSsidSalvo = prefs.getString("wssid", "");
+  String wifiSenhaSalva = prefs.getString("wsenha", "");
+  bool usandoRedeSalva = wifiSsidSalvo.length() > 0;
+  bool modoRecuperacao = false;
+  if (usandoRedeSalva) {
+    Serial.printf("[WIFI] Usando a rede salva no /config: %s\n", wifiSsidSalvo.c_str());
+    WiFi.begin(wifiSsidSalvo.c_str(), wifiSenhaSalva.c_str());
+  } else {
+    WiFi.begin(ssid, password);
+  }
   Serial.print("Conectando ao roteador");
-  // Trava a execução e imprime pontos enquanto não recebe o status de sucesso da rede
-  while (WiFi.status() != WL_CONNECTED) {
+  unsigned long inicioWifi = millis();
+  while (WiFi.status() != WL_CONNECTED && !modoRecuperacao) {
     delay(500);
     Serial.print(".");
+    if (usandoRedeSalva && millis() - inicioWifi > 30000) {
+      Serial.println("\n[WIFI] Rede salva falhou em 30 s — tentando a rede do código.");
+      usandoRedeSalva = false;
+      WiFi.begin(ssid, password);
+    }
+    if (millis() - inicioWifi > 90000) {
+      modoRecuperacao = true;
+      WiFi.mode(WIFI_AP);
+      String apNome = "SchoolAir-Sala" + String(SALA_PERTENCENTE);
+      WiFi.softAP(apNome.c_str(), "arescolar123");
+      Serial.println("\n[WIFI] Nenhuma rede conectou em 90 s — MODO DE RECUPERAÇÃO.");
+      Serial.printf("[WIFI] Conecte-se ao Wi-Fi \"%s\" (senha arescolar123)\n", apNome.c_str());
+      Serial.println("[WIFI] e abra http://192.168.4.1/config para corrigir a rede.");
+    }
   }
-  Serial.println("\nConexão estabelecida com sucesso!");
+  if (!modoRecuperacao) Serial.println("\nConexão estabelecida com sucesso!");
 
   // Imprime no console os dados de rede para depuração (útil para checar falhas de Gateway/DNS)
   Serial.println("--- DIAGNÓSTICO DE REDE ---");
