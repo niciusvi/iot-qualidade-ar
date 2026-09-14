@@ -44,6 +44,14 @@ typography:
     fontSize: "12px"
     fontWeight: 400
     letterSpacing: "0.05em"
+  tabela:
+    fontFamily: "IBM Plex Mono, monospace"
+    fontSize: "13px"
+    fontWeight: 400
+  micro:
+    fontFamily: "IBM Plex Sans, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
 rounded:
   sm: "4px"
   md: "6px"
@@ -132,6 +140,8 @@ Paleta em tokens com dois temas. O escuro é o canônico (frontmatter); o claro 
 - **Title** (500, 14px): nomes de cartões, salas e seções.
 - **Body** (400, 14px): texto corrente; tabelas em Mono 13px.
 - **Label** (400, 12px, tracking 0.05em, CAIXA ALTA): rótulos de métricas, sempre com ícone inline de 14–16px — único uso de uppercase.
+- **Tabela** (400, 13px, Mono): células de dados densos.
+- **Micro** (400, 11px): limiar sob o valor, chips e mini-botões — o menor corpo permitido; nada abaixo de 11px.
 
 ### Named Rules
 **A Regra da Unidade.** Nenhum número sem unidade e, onde couber, sem limiar de referência.
@@ -155,7 +165,7 @@ Sistema plano: profundidade por borda 1px (#2a3442) + degrau tonal (fundo → su
 - **Primary/Sucesso/Perigo:** padrão tintado (12–20% + texto na cor cheia), peso 500.
 
 ### Chips
-- 4px de raio, tintado 12%, 11px/500 — semânticos (Ótimo/Atenção/Crítico) e informativos.
+- 4px de raio, tintado 12%, 11px/500 — semânticos (Excelente/Atenção/Crítico) e informativos.
 
 ### Cards / Containers
 - 8–10px de raio, painel sobre fundo, borda 1px, padding 20–24px, sem sombra em repouso.
