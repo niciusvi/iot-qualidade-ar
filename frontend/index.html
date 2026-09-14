@@ -88,6 +88,7 @@
         const sala = await r.json();
         document.getElementById('cfg-sala-nome').value = '';
         await baixarProvisionamento(sala.id);   // baixa o arquivo do ESP32 na hora
+        mostrarAviso('Sala criada — arquivo de provisionamento baixado.');
         carregarConfig();
         carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
       } else { alert((await r.json()).erro || 'Falha ao criar sala'); }
@@ -101,6 +102,7 @@
       a.href = URL.createObjectURL(blob);
       a.download = 'sala-' + id + '.json';
       document.body.appendChild(a); a.click(); a.remove();
+      mostrarAviso('Arquivo sala-' + id + '.json baixado.');
     }
 
     async function alternarSala(id, ativa) {
@@ -108,6 +110,7 @@
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ativa }),
       });
+      mostrarAviso('Sala atualizada.');
       carregarConfig();
       carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
     }
@@ -129,6 +132,7 @@
       if (r.ok) {
         document.getElementById('cfg-dest-nome').value = '';
         document.getElementById('cfg-dest-numero').value = '';
+        mostrarAviso('Destinatário cadastrado.');
         carregarConfig();
       } else { alert((await r.json()).erro || 'Falha ao cadastrar'); }
     }
@@ -138,12 +142,14 @@
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ativo }),
       });
+      mostrarAviso('Destinatário atualizado.');
       carregarConfig();
     }
 
     async function removerDestinatario(id) {
       if (!confirm('Remover este destinatário?')) return;
       await authFetch('/api/destinatarios/' + id, { method: 'DELETE' });
+      mostrarAviso('Destinatário removido.');
       carregarConfig();
     }
 
@@ -168,6 +174,7 @@
         body: JSON.stringify({ perfil }),
       });
       if (!r.ok) alert((await r.json()).erro || 'Falha ao alterar o perfil');
+      else mostrarAviso('Perfil atualizado.');
       carregarConfig();
     }
 
@@ -177,6 +184,7 @@
         body: JSON.stringify({ telefone: telefone.trim() }),
       });
       if (!r.ok) alert((await r.json()).erro || 'Falha ao salvar o WhatsApp');
+      else mostrarAviso('WhatsApp salvo.');
       carregarConfig();
     }
 
@@ -194,6 +202,7 @@
       if (r.ok) {
         ['cfg-user-nome', 'cfg-user-login', 'cfg-user-senha', 'cfg-user-fone'].forEach(id =>
           document.getElementById(id).value = '');
+        mostrarAviso('Usuário criado.');
         carregarConfig();
       } else { alert((await r.json()).erro || 'Falha ao criar usuário'); }
     }
@@ -302,6 +311,18 @@
       background: var(--color-verde);
       animation: livePulse 2s infinite;
     }
+    .live-dot.err { background: var(--color-vermelho); animation: none; }
+
+    /* Aviso flutuante discreto: confirma ações sem interromper */
+    #aviso-flutuante {
+      position: fixed; right: 16px; bottom: 16px; z-index: 90;
+      background: var(--color-panel); border: 1px solid var(--color-border);
+      color: var(--color-text); font-size: 13px; padding: 10px 14px;
+      border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      opacity: 0; transform: translateY(6px); transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+    }
+    #aviso-flutuante.visivel { opacity: 1; transform: none; }
     @keyframes livePulse {
       0%, 100% { box-shadow: 0 0 0 0 rgba(110,192,122,0.5); }
       50%      { box-shadow: 0 0 0 6px rgba(110,192,122,0); }
@@ -515,7 +536,7 @@
           style="background:color-mix(in srgb, var(--color-bg) 92%, transparent); backdrop-filter:blur(10px);">
     <span class="text-sub text-xs">Monitor Ambiental Escolar</span>
     <div class="flex flex-nowrap items-center gap-3 text-xs text-sub">
-      <div class="live-dot"></div>
+      <div id="live-dot" class="live-dot"></div>
       <span id="last-update-label" aria-live="polite">Aguardando dados…</span>
       <button onclick="alternarTema()" title="Alternar tema claro/escuro"
               class="w-7 h-7 flex items-center justify-center rounded"
@@ -525,11 +546,22 @@
     </div>
   </header>
 
+  <div id="aviso-flutuante" aria-live="polite"></div>
+
 
   <!-- ============================================================
        CONTEÚDO PRINCIPAL — 3 abas: Visão Geral, Dashboard, Histórico
   ============================================================ -->
   <main class="max-w-screen-xl mx-auto px-6 py-8">
+
+    <!-- Falha de carregamento inicial (só aparece quando o boot falha) -->
+    <div id="erro-boot" role="alert" style="display:none;"
+         class="rounded-2xl border border-border p-6 mb-8">
+      <p class="text-text text-sm font-medium mb-1">Não consegui carregar o portal</p>
+      <p id="erro-boot-msg" class="text-sub text-xs mb-4">Falha ao buscar a lista de salas.</p>
+      <button onclick="iniciarApp()" class="rounded-lg px-4 py-2 text-sm font-medium"
+              style="background:rgba(107,157,248,0.15); color:var(--color-accent);">Tentar novamente</button>
+    </div>
 
     <!-- ============================================================
          ABA 1: VISÃO GERAL (NOVA!)
@@ -968,6 +1000,16 @@
     =========================================================== */
     lucide.createIcons();
 
+    /* Aviso flutuante: some sozinho depois de ~2,5 s */
+    let avisoTimer = null;
+    function mostrarAviso(texto) {
+      const el = document.getElementById('aviso-flutuante');
+      el.textContent = texto;
+      el.classList.add('visivel');
+      clearTimeout(avisoTimer);
+      avisoTimer = setTimeout(() => el.classList.remove('visivel'), 2600);
+    }
+
     /* ===== Tema claro/escuro: persistido, respeita o sistema na 1ª visita ===== */
     function alternarTema() {
       const novo = document.documentElement.dataset.tema === 'claro' ? 'escuro' : 'claro';
@@ -1009,15 +1051,20 @@
       opts.headers = Object.assign({}, opts.headers || {},
         AUTH ? { 'Authorization': 'Bearer ' + AUTH.token } : {});
       const r = await fetch(url, opts);
-      if (r.status === 401) { encerrarSessao(); throw new Error('Sessão expirada'); }
+      if (r.status === 401) { encerrarSessao('Sua sessão expirou — entre novamente.'); throw new Error('Sessão expirada'); }
       return r;
     }
 
-    function encerrarSessao() {
+    function encerrarSessao(motivo) {
       AUTH = null;
       try { localStorage.removeItem('schoolair_auth'); } catch (e) {}
       document.getElementById('login-overlay').style.display = 'flex';
       try { document.getElementById('login-usuario').focus(); } catch (e) {}
+      if (motivo) {
+        const el = document.getElementById('login-erro');
+        el.style.color = 'var(--color-ambar)';
+        el.textContent = motivo;
+      }
     }
 
     function logout() { encerrarSessao(); location.reload(); }
@@ -1077,6 +1124,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ usuario }),
         });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
         const d = await r.json();
         erro.style.color = 'var(--color-verde)';
         erro.textContent = d.mensagem || 'Solicitação registrada.';
@@ -1180,6 +1228,11 @@
         color: 'var(--color-vermelho)', bgColor: 'rgba(224,92,92,0.12)',
         barColor: 'var(--color-vermelho)', label: 'Crítica / Prejudicial', icon: 'shield-alert',
         badgeBg: 'rgba(224,92,92,0.12)', badgeColor: 'var(--color-vermelho)', badgeText: 'Crítico',
+      },
+      obsoleto: {
+        color: 'var(--color-muted)', bgColor: 'rgba(74,88,108,0.18)',
+        barColor: 'var(--color-muted)', label: 'Sem leitura recente', icon: 'clock',
+        badgeBg: 'rgba(74,88,108,0.18)', badgeColor: 'var(--color-muted)', badgeText: '—',
       },
     };
 
@@ -1404,7 +1457,7 @@
         }
 
         const latest = data[0];
-        const iaq = calcIAQ(latest);
+        const iaq = leituraRecente(latest) ? calcIAQ(latest) : { status: 'obsoleto' };
         const style = getStyle(iaq.status);
 
         iconWrap.style.background = style.bgColor;
@@ -1424,7 +1477,9 @@
         .map(el => {
           const id = Number(el.id.replace('overview-card-', ''));
           const dados = allRoomsData[id];
-          const r = (dados && dados.length) ? ordem[calcIAQ(dados[0]).status] : 3;
+          const r = (dados && dados.length)
+            ? (leituraRecente(dados[0]) ? ordem[calcIAQ(dados[0]).status] : 3)
+            : 4;
           return { el, r, id };
         })
         .sort((a, b) => a.r - b.r || a.id - b.id)
@@ -1439,8 +1494,21 @@
        Idêntica à versão anterior, mas agora opera sobre a sala
        indicada por selectedSala.
     =========================================================== */
+    /** Leitura mais nova que ~3 ciclos de envio (90 s) ainda conta como "agora". */
+    function leituraRecente(d) {
+      return d && (Date.now() - new Date(d.data).getTime()) < 90 * 1000;
+    }
+
     function updateDashboard(data) {
-      const iaq = calcIAQ(data);
+      const obsoleta = !leituraRecente(data);
+      const iaq = obsoleta
+        ? {
+            status: 'obsoleto',
+            reason: 'O sensor não reporta desde ' +
+              new Date(data.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) +
+              '. Verifique o dispositivo ou a rede da sala.',
+          }
+        : calcIAQ(data);
       const style = getStyle(iaq.status);
 
       // Hero card: o estado colore um lavado tonal sutil (sem faixa lateral)
@@ -1652,6 +1720,7 @@
 
         if (document.getElementById('tab-incidentes').style.display !== 'none') fetchAlertas();
 
+        document.getElementById('live-dot').classList.remove('err');
         const now = new Date();
         document.getElementById('last-update-label').textContent =
           'Atualizado às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -1659,6 +1728,7 @@
       } catch (error) {
         console.error('[School Air] Erro geral ao buscar dados:', error);
         document.getElementById('last-update-label').textContent = 'Falha na conexão';
+        document.getElementById('live-dot').classList.add('err');
       }
     }
 
@@ -1695,8 +1765,17 @@
     }
 
     async function iniciarApp() {
-      try { await carregarSalas(); }
-      catch (e) { console.error('[School Air] Falha ao carregar salas:', e); return; }
+      const erroBoot = document.getElementById('erro-boot');
+      try {
+        await carregarSalas();
+        erroBoot.style.display = 'none';
+      } catch (e) {
+        console.error('[School Air] Falha ao carregar salas:', e);
+        document.getElementById('erro-boot-msg').textContent =
+          'Falha ao buscar a lista de salas (' + e.message + '). O backend está no ar?';
+        erroBoot.style.display = 'block';
+        return;
+      }
       aplicarPerfilUI();
       buildSalaSelector();
       buildVisaoGeral();
