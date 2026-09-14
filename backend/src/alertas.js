@@ -95,7 +95,44 @@ const NOMES_PARAM = {
 };
 
 /**
- * Envia um texto para todos os destinatários ativos via Evolution API.
+ * Envia um texto para UM número/grupo, pelo transporte ativo:
+ * gateway n8n (N8N_WEBHOOK_URL definida) ou Evolution da stack.
+ * Retorna { ok, erro? } — nunca lança exceção.
+ */
+export async function enviarTextoPara(numero, texto) {
+  const usaGateway = N8N_WEBHOOK_URL.length > 0;
+  if (!usaGateway && !EVOLUTION_API_KEY) {
+    return { ok: false, erro: 'EVOLUTION_API_KEY não configurada' };
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(
+      usaGateway
+        ? N8N_WEBHOOK_URL
+        : `${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(EVOLUTION_INSTANCE)}`,
+      {
+        method: 'POST',
+        headers: usaGateway
+          ? { 'Content-Type': 'application/json' }
+          : { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
+        body: usaGateway
+          ? JSON.stringify({ numero, texto })          // contrato do gateway n8n
+          : JSON.stringify({ number: numero, text: texto }), // contrato da Evolution
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timer);
+    if (resp.ok) return { ok: true };
+    const corpo = await resp.text().catch(() => '');
+    return { ok: false, erro: `HTTP ${resp.status} ${corpo.slice(0, 120)}` };
+  } catch (err) {
+    return { ok: false, erro: err.message };
+  }
+}
+
+/**
+ * Envia um texto para todos os destinatários ativos.
  * Retorna { enviados: [...], erros: [...] } — nunca lança exceção.
  */
 export async function enviarWhatsApp(texto) {
@@ -108,41 +145,11 @@ export async function enviarWhatsApp(texto) {
     resultado.erros.push('nenhum destinatário cadastrado');
     return resultado;
   }
-  const usaGateway = N8N_WEBHOOK_URL.length > 0;
-  if (!usaGateway && !EVOLUTION_API_KEY) {
-    resultado.erros.push('EVOLUTION_API_KEY não configurada');
-    return resultado;
-  }
 
   for (const d of destinatarios) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
-      const resp = await fetch(
-        usaGateway
-          ? N8N_WEBHOOK_URL
-          : `${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(EVOLUTION_INSTANCE)}`,
-        {
-          method: 'POST',
-          headers: usaGateway
-            ? { 'Content-Type': 'application/json' }
-            : { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
-          body: usaGateway
-            ? JSON.stringify({ numero: d.numero, texto })          // contrato do gateway n8n
-            : JSON.stringify({ number: d.numero, text: texto }),   // contrato da Evolution
-          signal: controller.signal,
-        }
-      );
-      clearTimeout(timer);
-      if (resp.ok) {
-        resultado.enviados.push(d.numero);
-      } else {
-        const corpo = await resp.text().catch(() => '');
-        resultado.erros.push(`${d.numero}: HTTP ${resp.status} ${corpo.slice(0, 120)}`);
-      }
-    } catch (err) {
-      resultado.erros.push(`${d.numero}: ${err.message}`);
-    }
+    const r = await enviarTextoPara(d.numero, texto);
+    if (r.ok) resultado.enviados.push(d.numero);
+    else resultado.erros.push(`${d.numero}: ${r.erro}`);
   }
   return resultado;
 }

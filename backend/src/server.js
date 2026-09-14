@@ -24,7 +24,7 @@ import { avaliarAlertas } from './alertas.js';
 import crypto from 'node:crypto';
 import { login, exigirPerfil, seedAdmin, hashSenha } from './auth.js';
 import { jobRelatorioSemanal, montarRelatorioSemanal, estatisticasPeriodo } from './relatorio.js';
-import { enviarWhatsApp } from './alertas.js';
+import { enviarWhatsApp, enviarTextoPara } from './alertas.js';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -335,13 +335,58 @@ app.get('/api/auth/me', exigirPerfil('visualizacao'), (req, res) => {
   res.json({ nome, usuario, perfil });
 });
 
+/** Valida número/grupo de WhatsApp (mesma regra dos destinatários). */
+const telefoneValido = (t) => /^\d{8,15}$/.test(t) || /^\d+@g\.us$/.test(t);
+
+/** Cooldown da recuperação de senha (anti-abuso): 1 tentativa por usuário a cada 5 min. */
+const cooldownRecuperacao = new Map();
+
+/**
+ * POST /api/auth/recuperar — recuperação de senha via WhatsApp.
+ * Gera uma senha temporária e envia ao telefone/grupo cadastrado no usuário.
+ * A resposta é sempre genérica (não revela se o usuário existe) e a senha só
+ * é trocada se a mensagem realmente sair — nunca tranca o usuário à toa.
+ */
+app.post('/api/auth/recuperar', async (req, res, next) => {
+  try {
+    const usuario = String(req.body?.usuario || '').trim().toLowerCase();
+    const generica = {
+      status: 'ok',
+      mensagem: 'Se o usuário existir e tiver WhatsApp cadastrado, uma senha temporária foi enviada.',
+    };
+    if (!usuario) return res.json(generica);
+
+    const ultimo = cooldownRecuperacao.get(usuario) || 0;
+    if (Date.now() - ultimo < 5 * 60 * 1000) return res.json(generica);
+    cooldownRecuperacao.set(usuario, Date.now());
+
+    const { rows } = await pool.query(
+      'SELECT id, telefone FROM usuarios WHERE usuario = $1 AND ativo', [usuario]
+    );
+    const u = rows[0];
+    if (u && u.telefone) {
+      const temporaria = crypto.randomBytes(6).toString('base64url').slice(0, 8);
+      const envio = await enviarTextoPara(u.telefone,
+        `🔑 School Air: sua senha temporária é *${temporaria}*\n` +
+        `Use-a para entrar no portal. Se quiser outra senha, peça ao administrador.`);
+      if (envio.ok) {
+        await pool.query('UPDATE usuarios SET senha_hash = $2 WHERE id = $1', [u.id, hashSenha(temporaria)]);
+        console.log(`[auth] Senha temporária enviada para "${usuario}".`);
+      } else {
+        console.warn(`[auth] Recuperação de "${usuario}" não enviada: ${envio.erro}`);
+      }
+    }
+    res.json(generica);
+  } catch (err) { next(err); }
+});
+
 /* ============================================================================
  * USUÁRIOS DO PORTAL (Fase 3 — somente admin)
  * ==========================================================================*/
 app.get('/api/usuarios', exigirPerfil('admin'), async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, nome, usuario, perfil, ativo, criado_em FROM usuarios ORDER BY id'
+      'SELECT id, nome, usuario, perfil, telefone, ativo, criado_em FROM usuarios ORDER BY id'
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -356,12 +401,16 @@ app.post('/api/usuarios', exigirPerfil('admin'), async (req, res, next) => {
     if (!['visualizacao', 'analise', 'admin'].includes(perfil)) {
       return res.status(400).json({ erro: 'perfil deve ser visualizacao, analise ou admin' });
     }
+    const telefone = String(req.body?.telefone || '').trim();
+    if (telefone && !telefoneValido(telefone)) {
+      return res.status(400).json({ erro: 'WhatsApp inválido. Use 5511999999999 ou 120363...@g.us' });
+    }
     const { rows } = await pool.query(
-      `INSERT INTO usuarios (nome, usuario, senha_hash, perfil)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO usuarios (nome, usuario, senha_hash, perfil, telefone)
+       VALUES ($1, $2, $3, $4, NULLIF($5, ''))
        ON CONFLICT (usuario) DO NOTHING
-       RETURNING id, nome, usuario, perfil, ativo`,
-      [String(nome).trim(), String(usuario).trim().toLowerCase(), hashSenha(senha), perfil]
+       RETURNING id, nome, usuario, perfil, telefone, ativo`,
+      [String(nome).trim(), String(usuario).trim().toLowerCase(), hashSenha(senha), perfil, telefone]
     );
     if (rows.length === 0) return res.status(409).json({ erro: 'Este login já existe' });
     res.status(201).json(rows[0]);
@@ -385,11 +434,18 @@ app.put('/api/usuarios/:id(\\d+)', exigirPerfil('admin'), async (req, res, next)
     if (req.body?.senha) {
       valores.push(hashSenha(req.body.senha)); campos.push(`senha_hash = $${valores.length}`);
     }
+    if (typeof req.body?.telefone === 'string') {
+      const tel = req.body.telefone.trim();
+      if (tel && !telefoneValido(tel)) {
+        return res.status(400).json({ erro: 'WhatsApp inválido. Use 5511999999999 ou 120363...@g.us' });
+      }
+      valores.push(tel || null); campos.push(`telefone = $${valores.length}`);
+    }
     if (campos.length === 0) return res.status(400).json({ erro: 'Nada para atualizar' });
     valores.push(id);
     const { rows } = await pool.query(
       `UPDATE usuarios SET ${campos.join(', ')} WHERE id = $${valores.length}
-       RETURNING id, nome, usuario, perfil, ativo`, valores
+       RETURNING id, nome, usuario, perfil, telefone, ativo`, valores
     );
     if (rows.length === 0) return res.status(404).json({ erro: 'Usuário não encontrado' });
     res.json(rows[0]);

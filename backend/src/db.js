@@ -112,9 +112,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
   usuario    TEXT NOT NULL UNIQUE,
   senha_hash TEXT NOT NULL,
   perfil     TEXT NOT NULL DEFAULT 'visualizacao',
+  telefone   TEXT,                 -- WhatsApp (número ou grupo) p/ recuperação de senha
   ativo      BOOLEAN NOT NULL DEFAULT TRUE,
   criado_em  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migração leve para bancos criados antes do campo telefone
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefone TEXT;
 
 -- Fase 4: estado interno da aplicação (ex.: data do último relatório semanal)
 CREATE TABLE IF NOT EXISTS app_estado (
