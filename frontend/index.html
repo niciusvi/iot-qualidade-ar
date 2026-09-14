@@ -8,9 +8,9 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 
-  <!-- Google Fonts: Roboto (padrão Material Design) -->
+  <!-- Google Fonts: IBM Plex Sans (UI) + IBM Plex Mono (leituras numéricas) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <script>
     /*
@@ -23,20 +23,24 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Roboto', 'sans-serif'],
+            sans: ['IBM Plex Sans', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          },
+          borderRadius: {
+            DEFAULT: '4px', lg: '6px', xl: '8px', '2xl': '10px',
           },
           colors: {
-            bg:      '#121212',
-            surface: '#1e1e1e',
-            panel:   '#2c2c2c',
-            border:  '#3a3a3a',
-            muted:   '#525252',
-            text:    '#e0e0e0',
-            sub:     '#9e9e9e',
-            accent:  '#7c9ef7',
-            green:   '#81c784',
-            yellow:  '#ffb74d',
-            red:     '#e57373',
+            bg:      'var(--color-bg)',
+            surface: 'var(--color-surface)',
+            panel:   'var(--color-panel)',
+            border:  'var(--color-border)',
+            muted:   'var(--color-muted)',
+            text:    'var(--color-text)',
+            sub:     'var(--color-sub)',
+            accent:  'var(--color-accent)',
+            green:   'var(--color-verde)',
+            yellow:  'var(--color-ambar)',
+            red:     'var(--color-vermelho)',
           },
         }
       }
@@ -61,15 +65,15 @@
     }
 
     const chipAtivo = (on) => on
-      ? '<span style="color:#81c784;">ativa</span>'
-      : '<span style="color:#e57373;">inativa</span>';
+      ? '<span style="color:var(--color-verde);">ativa</span>'
+      : '<span style="color:var(--color-vermelho);">inativa</span>';
     const btnMini = (rotulo, cor, fn) =>
       `<button onclick="${fn}" class="rounded px-2 py-1" style="background:rgba(${cor},0.12); color:rgb(${cor}); font-size:11px; white-space:nowrap;">${rotulo}</button>`;
 
     function renderCfgSalas(salas) {
       document.getElementById('cfg-salas-body').innerHTML = salas.map(s => `<tr>
         <td>${s.id}</td><td>${s.nome}</td><td>${chipAtivo(s.ativa)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '124,158,247', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', s.ativa ? '229,115,115' : '129,199,132', `alternarSala(${s.id}, ${!s.ativa})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '107,157,248', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', s.ativa ? '224,92,92' : '110,192,122', `alternarSala(${s.id}, ${!s.ativa})`)}</div></td>
       </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhuma sala.</td></tr>';
     }
 
@@ -111,7 +115,7 @@
     function renderCfgDestinatarios(dest) {
       document.getElementById('cfg-dest-body').innerHTML = dest.map(d => `<tr>
         <td>${d.nome || '—'}</td><td>${d.numero}</td><td>${chipAtivo(d.ativo)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini(d.ativo ? 'desativar' : 'reativar', d.ativo ? '229,115,115' : '129,199,132', `alternarDestinatario(${d.id}, ${!d.ativo})`)}${btnMini('remover', '229,115,115', `removerDestinatario(${d.id})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini(d.ativo ? 'desativar' : 'reativar', d.ativo ? '224,92,92' : '110,192,122', `alternarDestinatario(${d.id}, ${!d.ativo})`)}${btnMini('remover', '224,92,92', `removerDestinatario(${d.id})`)}</div></td>
       </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhum destinatário — os alertas não serão entregues.</td></tr>';
     }
 
@@ -154,7 +158,7 @@
               onchange="alterarTelefoneUsuario(${u.id}, this.value)" title="Número ou grupo p/ recuperação de senha"
               class="bg-surface border border-border rounded px-2 py-1 text-xs text-text" style="width:145px;"></td>
         <td>${chipAtivo(u.ativo)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini(u.ativo ? 'desativar' : 'reativar', u.ativo ? '229,115,115' : '129,199,132', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '229,115,115', `removerUsuario(${u.id})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini(u.ativo ? 'desativar' : 'reativar', u.ativo ? '224,92,92' : '110,192,122', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '224,92,92', `removerUsuario(${u.id})`)}</div></td>
       </tr>`).join('');
     }
 
@@ -215,47 +219,91 @@
     /* =========================================================
        ESTILOS GLOBAIS
        Material Design Dark Theme:
-       - Fundo #121212 com superfícies progressivamente mais claras
+       - Fundo var(--color-bg) com superfícies progressivamente mais claras
        - Texto branco com opacidade (87% primário, 60% secundário)
        - Elevação representada por luminosidade
     ========================================================= */
     :root {
-      --color-bg:      #121212;
-      --color-surface: #1e1e1e;
-      --color-panel:   #2c2c2c;
-      --color-border:  #3a3a3a;
-      --color-accent:  #7c9ef7;
+      --color-bg:      #0e1116;
+      --color-surface: #151a21;
+      --color-panel:   #1b222c;
+      --color-border:  #2a3442;
+      --color-muted:   #4a586c;
+      --color-text:    #e2e6ec;
+      --color-sub:     #94a1b3;
+      --color-td:      #b6c0cd;
+      --color-accent:  #6b9df8;
+      --color-verde:   #6ec07a;
+      --color-ambar:   #e8a33d;
+      --color-vermelho:#e05c5c;
+    }
+
+    /* Tema claro: mesmos papéis, contraste conferido (texto ≥4.5:1) */
+    [data-tema="claro"] {
+      --color-bg:      #eef1f5;
+      --color-surface: #f8fafc;
+      --color-panel:   #ffffff;
+      --color-border:  #d7dde6;
+      --color-muted:   #8a93a3;
+      --color-text:    #1c2430;
+      --color-sub:     #5a6675;
+      --color-td:      #3d4756;
+      --color-accent:  #3565c4;
+      --color-verde:   #22803a;
+      --color-ambar:   #8f6206;
+      --color-vermelho:#b93a3a;
     }
 
     html, body {
       background-color: var(--color-bg);
-      font-family: 'Roboto', sans-serif;
-      color: #e0e0e0;
+      font-family: 'IBM Plex Sans', sans-serif;
+      color: var(--color-text);
       overflow-x: hidden;
+    }
+
+    /* ===== MENU LATERAL (trilho expansível) ===== */
+    body { padding-left: 220px; transition: padding-left 0.2s ease; }
+    body[data-menu="fechado"] { padding-left: 56px; }
+    #menu-lateral {
+      position: fixed; left: 0; top: 0; bottom: 0; width: 220px; z-index: 60;
+      background: var(--color-surface); border-right: 1px solid var(--color-border);
+      display: flex; flex-direction: column; transition: width 0.2s ease; overflow: hidden;
+    }
+    body[data-menu="fechado"] #menu-lateral { width: 56px; }
+    body[data-menu="fechado"] .side-label { display: none; }
+    #menu-lateral nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; flex: 1; }
+    .sidebar-rodape { padding: 8px; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 6px; }
+    @media (prefers-reduced-motion: reduce) {
+      body, #menu-lateral { transition: none; }
+    }
+
+    /* Valores de leitura e tabelas em mono: leitura de instrumento */
+    #val-temp, #val-hum, #val-co2, #val-voc, #val-pm25, #val-nox, #val-luz,
+    #hero-time, .data-table tbody td,
+    [id^="overview-temp-"], [id^="overview-co2-"] {
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     /* Scrollbar discreta para dark mode */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: var(--color-surface); }
-    ::-webkit-scrollbar-thumb { background: #525252; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: var(--color-muted); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #666; }
 
     /* Elevações Material */
-    .elevation-2 { box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 8px rgba(0,0,0,0.2); }
-    .elevation-3 { box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 8px 16px rgba(0,0,0,0.2); }
+    .elevation-2 { box-shadow: none; }
+    .elevation-3 { box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
 
-    /* Barra lateral colorida no hero card */
-    .hero-bar { transition: background 0.5s ease; }
 
     /* Badge pulsante "Ao Vivo" */
     .live-dot {
       width: 8px; height: 8px; border-radius: 50%;
-      background: #81c784;
+      background: var(--color-verde);
       animation: livePulse 2s infinite;
     }
     @keyframes livePulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(129,199,132,0.5); }
-      50%      { box-shadow: 0 0 0 6px rgba(129,199,132,0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(110,192,122,0.5); }
+      50%      { box-shadow: 0 0 0 6px rgba(110,192,122,0); }
     }
 
     /* Animação de entrada das abas */
@@ -269,7 +317,7 @@
     .sensor-card {
       background: var(--color-panel);
       border: 1px solid var(--color-border);
-      border-radius: 16px;
+      border-radius: 8px;
       padding: 20px 24px;
       transition: box-shadow 0.2s, transform 0.2s;
     }
@@ -283,7 +331,7 @@
       background: var(--color-surface);
       position: sticky; top: 0; z-index: 10;
       font-size: 12px; text-transform: uppercase;
-      letter-spacing: 0.05em; color: #9e9e9e;
+      letter-spacing: 0.05em; color: var(--color-sub);
       padding: 12px 14px; font-weight: 500;
       border-bottom: 1px solid var(--color-border);
     }
@@ -291,33 +339,39 @@
       border-bottom: 1px solid var(--color-border);
       transition: background 0.15s;
     }
-    .data-table tbody tr:hover { background: rgba(255,255,255,0.04); }
+    .data-table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
     .data-table tbody td {
-      padding: 10px 14px; font-size: 13px; color: #bdbdbd;
+      padding: 10px 14px; font-size: 13px; color: var(--color-td);
     }
 
     /* Botões de navegação (abas) — Material tabs */
     .nav-btn {
-      padding: 8px 14px; border-radius: 12px; white-space: nowrap;
+      padding: 9px 12px; border-radius: 6px; white-space: nowrap;
+      display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
       font-size: 14px; font-weight: 500;
       letter-spacing: 0.02em;
       transition: background 0.2s, color 0.2s;
       cursor: pointer; border: none;
-      background: transparent; color: #9e9e9e;
+      background: transparent; color: var(--color-sub);
     }
     .nav-btn.active {
-      background: rgba(124,158,247,0.12);
-      color: #7c9ef7;
+      background: rgba(107,157,248,0.12);
+      color: var(--color-accent);
     }
     .nav-btn:hover:not(.active) {
-      background: rgba(255,255,255,0.05);
-      color: #e0e0e0;
+      background: color-mix(in srgb, var(--color-text) 7%, transparent);
+      color: var(--color-text);
     }
+
+
+    /* A página não rola enquanto o login está aberto */
+    body:has(#login-overlay[style*="display:flex"]),
+    body:has(#login-overlay[style*="display: flex"]) { overflow: hidden; }
 
     /* Chip de status */
     .status-chip {
       font-size: 11px; font-weight: 500;
-      padding: 3px 10px; border-radius: 20px;
+      padding: 3px 8px; border-radius: 4px;
       letter-spacing: 0.02em;
     }
 
@@ -327,28 +381,28 @@
 
     /* Seletor de sala — botões tipo "pill" */
     .sala-pill {
-      padding: 8px 18px; border-radius: 20px;
+      padding: 7px 16px; border-radius: 6px;
       font-size: 13px; font-weight: 500;
       cursor: pointer; border: 1px solid var(--color-border);
-      background: transparent; color: #9e9e9e;
+      background: transparent; color: var(--color-sub);
       transition: all 0.2s;
       white-space: nowrap;
     }
     .sala-pill.active {
-      background: rgba(124,158,247,0.15);
-      color: #7c9ef7;
-      border-color: rgba(124,158,247,0.4);
+      background: rgba(107,157,248,0.15);
+      color: var(--color-accent);
+      border-color: rgba(107,157,248,0.4);
     }
     .sala-pill:hover:not(.active) {
-      background: rgba(255,255,255,0.05);
-      color: #e0e0e0;
+      background: color-mix(in srgb, var(--color-text) 7%, transparent);
+      color: var(--color-text);
     }
 
     /* Card de sala na Visão Geral */
     .sala-overview-card {
       background: var(--color-panel);
       border: 1px solid var(--color-border);
-      border-radius: 16px;
+      border-radius: 8px;
       padding: 24px;
       transition: box-shadow 0.2s, transform 0.2s, border-color 0.3s;
       cursor: pointer;
@@ -376,11 +430,11 @@
   <div id="login-overlay" style="position:fixed; inset:0; z-index:100; background:var(--color-bg); display:flex; align-items:center; justify-content:center;">
     <div class="rounded-2xl border border-border p-8 elevation-3" style="background:var(--color-panel); width:340px;">
       <div class="flex items-center gap-3 mb-6">
-        <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:rgba(124,158,247,0.15);">
-          <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:rgba(107,157,248,0.15);">
+          <i data-lucide="wind" class="w-5 h-5" style="color:var(--color-accent);"></i>
         </div>
         <div>
-          <p class="text-text text-base font-medium">School <span style="color:#7c9ef7;">Air</span></p>
+          <p class="text-text text-base font-medium">School <span style="color:var(--color-accent);">Air</span></p>
           <p class="text-sub text-xs">Acesso ao portal</p>
         </div>
       </div>
@@ -391,75 +445,70 @@
       <input id="login-senha" type="password" autocomplete="current-password"
              class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-4">
       <button onclick="fazerLogin()" class="w-full rounded-lg px-4 py-2 text-sm font-medium"
-              style="background:rgba(124,158,247,0.2); color:#7c9ef7;">Entrar</button>
+              style="background:rgba(107,157,248,0.2); color:var(--color-accent);">Entrar</button>
       <button onclick="esqueciSenha()" class="w-full text-center text-xs mt-3"
-              style="color:#9e9e9e; background:none; border:none; cursor:pointer;">Esqueci minha senha</button>
-      <p id="login-erro" class="text-xs mt-2" style="color:#e57373; min-height:16px;"></p>
+              style="color:var(--color-sub); background:none; border:none; cursor:pointer;">Esqueci minha senha</button>
+      <p id="login-erro" class="text-xs mt-2" style="color:var(--color-vermelho); min-height:16px;"></p>
     </div>
   </div>
 
   <!-- ============================================================
        HEADER — Barra superior fixa com logo, navegação e status
   ============================================================ -->
-  <header class="sticky top-0 z-50 border-b border-border"
-          style="background:rgba(18,18,18,0.92); backdrop-filter:blur(10px);">
-    <div class="max-w-screen-xl mx-auto px-4 sm:px-6 h-16 flex flex-nowrap items-center justify-between gap-3 min-w-0">
+  <!-- ============================================================
+       MENU LATERAL — trilho expansível (56px ↔ 220px)
+  ============================================================ -->
+  <aside id="menu-lateral">
+    <div class="flex items-center gap-3 px-3 h-14 border-b border-border" style="min-width:220px;">
+      <button onclick="alternarMenu()" title="Expandir/recolher menu"
+              class="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded"
+              style="background:rgba(107,157,248,0.15); color:var(--color-accent);">
+        <i data-lucide="panel-left" class="w-4 h-4"></i>
+      </button>
+      <span class="side-label text-base font-medium tracking-tight whitespace-nowrap">
+        School <span style="color:var(--color-accent);">Air</span>
+      </span>
+    </div>
 
-      <!-- Logo -->
-      <div class="flex items-center gap-3 flex-shrink-0 whitespace-nowrap">
-        <div class="w-9 h-9 rounded-xl flex items-center justify-center"
-             style="background:rgba(124,158,247,0.15);">
-          <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
-        </div>
-        <span class="text-lg font-medium tracking-tight">
-          School <span style="color:#7c9ef7;">Air</span>
-        </span>
-        <span class="hidden xl:block text-sub text-xs ml-2">Monitor Ambiental Escolar</span>
-      </div>
+    <nav>
+      <button id="btn-visao" class="nav-btn" onclick="showTab('visao')" title="Visão Geral">
+        <i data-lucide="grid-3x3" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Visão Geral</span>
+      </button>
+      <button id="btn-dashboard" class="nav-btn active" onclick="showTab('dashboard')" title="Dashboard">
+        <i data-lucide="layout-dashboard" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Dashboard</span>
+      </button>
+      <button id="btn-historico" class="nav-btn" onclick="showTab('historico')" title="Histórico">
+        <i data-lucide="history" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Histórico</span>
+      </button>
+      <button id="btn-incidentes" class="nav-btn" onclick="showTab('incidentes')" title="Incidentes">
+        <i data-lucide="bell" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Incidentes</span>
+      </button>
+      <button id="btn-config" class="nav-btn" onclick="showTab('config')" style="display:none;" title="Configurações">
+        <i data-lucide="settings" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Configurações</span>
+      </button>
+    </nav>
 
-      <!-- Navegação por abas — ATUALIZADA COM 3 ABAS -->
-      <nav class="flex flex-nowrap items-center gap-1 p-1 rounded-xl overflow-x-auto min-w-0"
-           style="background:var(--color-surface); border:1px solid var(--color-border);">
-        <button id="btn-visao" class="nav-btn" onclick="showTab('visao')">
-          <span class="flex items-center gap-2">
-            <i data-lucide="grid-3x3" class="w-4 h-4"></i>
-            Visão Geral
-          </span>
-        </button>
-        <button id="btn-dashboard" class="nav-btn active" onclick="showTab('dashboard')">
-          <span class="flex items-center gap-2">
-            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-            Dashboard
-          </span>
-        </button>
-        <button id="btn-historico" class="nav-btn" onclick="showTab('historico')">
-          <span class="flex items-center gap-2">
-            <i data-lucide="history" class="w-4 h-4"></i>
-            Histórico
-          </span>
-        </button>
-        <button id="btn-incidentes" class="nav-btn" onclick="showTab('incidentes')">
-          <span class="flex items-center gap-2">
-            <i data-lucide="bell" class="w-4 h-4"></i>
-            Incidentes
-          </span>
-        </button>
-        <button id="btn-config" class="nav-btn" onclick="showTab('config')" style="display:none;">
-          <span class="flex items-center gap-2">
-            <i data-lucide="settings" class="w-4 h-4"></i>
-            Configurações
-          </span>
-        </button>
-      </nav>
+    <div class="sidebar-rodape">
+      <span id="user-chip" class="side-label text-xs px-2 py-1 whitespace-nowrap overflow-hidden"
+            style="color:var(--color-accent); text-overflow:ellipsis;"></span>
+      <button onclick="logout()" class="nav-btn" title="Sair" style="color:var(--color-vermelho);">
+        <i data-lucide="log-out" class="w-4 h-4 flex-shrink-0"></i><span class="side-label">Sair</span>
+      </button>
+    </div>
+  </aside>
 
-      <!-- Status de conexão -->
-      <div class="flex flex-nowrap items-center gap-3 text-xs text-sub flex-shrink-0">
-        <div class="live-dot"></div>
-        <span id="last-update-label">Aguardando dados…</span>
-        <span id="user-chip" class="status-chip" style="background:rgba(124,158,247,0.1); color:#7c9ef7; white-space:nowrap; max-width:160px; overflow:hidden; text-overflow:ellipsis;"></span>
-        <button onclick="logout()" class="rounded-lg px-3 py-1.5" title="Sair"
-                style="background:rgba(229,115,115,0.12); color:#e57373;">Sair</button>
-      </div>
+  <!-- Barra superior slim: só o estado da conexão -->
+  <header class="sticky top-0 z-50 border-b border-border h-11 flex items-center justify-between px-6"
+          style="background:color-mix(in srgb, var(--color-bg) 92%, transparent); backdrop-filter:blur(10px);">
+    <span class="text-sub text-xs">Monitor Ambiental Escolar</span>
+    <div class="flex flex-nowrap items-center gap-3 text-xs text-sub">
+      <div class="live-dot"></div>
+      <span id="last-update-label">Aguardando dados…</span>
+      <button onclick="alternarTema()" title="Alternar tema claro/escuro"
+              class="w-7 h-7 flex items-center justify-center rounded"
+              style="background:rgba(107,157,248,0.12); color:var(--color-accent);">
+        <i data-lucide="sun-moon" class="w-4 h-4"></i>
+      </button>
     </div>
   </header>
 
@@ -495,7 +544,6 @@
 
       <!-- SELETOR DE SALA — Botões pill horizontais -->
       <div class="mb-6">
-        <p class="text-sub text-xs uppercase tracking-wide mb-3">Selecione a sala</p>
         <div id="sala-selector" class="flex flex-wrap gap-2">
           <!-- Os 10 botões pill são gerados pelo JavaScript -->
         </div>
@@ -505,20 +553,18 @@
       <div id="hero-card"
            class="relative overflow-hidden rounded-2xl border border-border mb-8 elevation-3 transition-all duration-500"
            style="background:var(--color-panel);">
-        <div id="hero-bar" class="hero-bar absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl"
-             style="background:#81c784;"></div>
         <div class="relative px-8 py-7 flex flex-col sm:flex-row items-start sm:items-center gap-6">
           <div id="hero-icon-wrap"
                class="flex-shrink-0 w-16 h-16 rounded-2xl flex items-center justify-center"
-               style="background:rgba(129,199,132,0.12);">
-            <i id="hero-icon" data-lucide="check-circle" class="w-8 h-8" style="color:#81c784;"></i>
+               style="background:rgba(110,192,122,0.12);">
+            <i id="hero-icon" data-lucide="check-circle" class="w-8 h-8" style="color:var(--color-verde);"></i>
           </div>
           <div class="flex-1">
             <p id="hero-sala-label" class="text-sub text-xs uppercase tracking-widest mb-1">
               Sala 1 — Qualidade do Ar Interno (IAQ)
             </p>
             <h1 id="hero-status" class="text-4xl font-bold tracking-tight mb-1"
-                style="color:#81c784;">
+                style="color:var(--color-verde);">
               Excelente
             </h1>
             <p id="hero-reason" class="text-sub text-sm leading-relaxed">
@@ -532,90 +578,91 @@
         </div>
       </div>
 
-      <!-- Cards de sensores principais -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <!-- Leituras principais: o CO2 é o instrumento dominante da decisão -->
+      <div class="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr_1fr] gap-4 mb-4">
+        <div class="sensor-card flex flex-col justify-between" style="min-height:150px;">
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-1.5 text-sub">
+              <i data-lucide="wind" class="w-4 h-4"></i>
+              <p class="text-xs uppercase tracking-wide">Dióxido de Carbono</p>
+            </div>
+            <span id="badge-co2" class="status-chip"
+                  style="background:rgba(110,192,122,0.12); color:var(--color-verde);">—</span>
+          </div>
+          <div>
+            <p id="val-co2" class="text-5xl font-bold" style="letter-spacing:-0.01em;">—</p>
+            <p class="text-sub mt-2" style="font-size:11px; opacity:0.75;">ideal &lt;1000 · alerta &gt;1500 · crítico &gt;3000 ppm</p>
+          </div>
+        </div>
         <div class="sensor-card">
-          <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="thermometer" class="w-5 h-5" style="color:#7c9ef7;"></i>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-1.5 text-sub">
+              <i data-lucide="thermometer" class="w-4 h-4"></i>
+              <p class="text-xs uppercase tracking-wide">Temperatura</p>
             </div>
             <span id="badge-temp" class="status-chip"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+                  style="background:rgba(110,192,122,0.12); color:var(--color-verde);">—</span>
           </div>
-          <p class="text-sub text-xs uppercase tracking-wide mb-1">Temperatura</p>
           <p id="val-temp" class="text-3xl font-bold">—</p>
           <p class="text-sub text-xs mt-2">Ideal: 20 – 24 °C</p>
         </div>
         <div class="sensor-card">
-          <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="droplets" class="w-5 h-5" style="color:#7c9ef7;"></i>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-1.5 text-sub">
+              <i data-lucide="droplets" class="w-4 h-4"></i>
+              <p class="text-xs uppercase tracking-wide">Umidade Relativa</p>
             </div>
             <span id="badge-hum" class="status-chip"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+                  style="background:rgba(110,192,122,0.12); color:var(--color-verde);">—</span>
           </div>
-          <p class="text-sub text-xs uppercase tracking-wide mb-1">Umidade Relativa</p>
           <p id="val-hum" class="text-3xl font-bold">—</p>
           <p class="text-sub text-xs mt-2">Ideal: 40 – 60%</p>
         </div>
-        <div class="sensor-card">
-          <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="wind" class="w-5 h-5" style="color:#7c9ef7;"></i>
-            </div>
-            <span id="badge-co2" class="status-chip"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
-          </div>
-          <p class="text-sub text-xs uppercase tracking-wide mb-1">Dióxido de Carbono</p>
-          <p id="val-co2" class="text-3xl font-bold">—</p>
-          <p class="text-sub text-xs mt-2">Ideal: &lt;1000 ppm</p>
-        </div>
-        <div class="sensor-card">
-          <div class="flex items-center justify-between mb-4">
-            <div class="w-10 h-10 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="flask-conical" class="w-5 h-5" style="color:#7c9ef7;"></i>
-            </div>
-            <span id="badge-voc" class="status-chip"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
-          </div>
-          <p class="text-sub text-xs uppercase tracking-wide mb-1">Índice VOC</p>
-          <p id="val-voc" class="text-3xl font-bold">—</p>
-          <p class="text-sub text-xs mt-2">Ideal: &lt;100</p>
-        </div>
       </div>
 
-      <!-- Cards secundários -->
-      <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <div class="sensor-card">
-          <div class="flex items-center justify-between mb-3">
-            <p class="text-sub text-xs uppercase tracking-wide">PM2.5 (Partículas)</p>
-            <span id="badge-pm25" class="status-chip"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">—</span>
+      <!-- Régua de leituras secundárias: uma superfície única, sem grade de cartões -->
+      <div class="rounded-2xl border border-border px-3 py-4" style="background:var(--color-surface);">
+        <div class="grid grid-cols-2 lg:grid-cols-4 lg:divide-x divide-border gap-y-4">
+          <div class="px-4">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-1.5 text-sub">
+                <i data-lucide="haze" class="w-3.5 h-3.5"></i>
+                <p class="text-xs uppercase tracking-wide">PM2.5</p>
+              </div>
+              <span id="badge-pm25" class="status-chip"
+                    style="background:rgba(110,192,122,0.12); color:var(--color-verde);">—</span>
+            </div>
+            <p id="val-pm25" class="text-xl font-bold">—</p>
+            <p class="text-sub text-xs mt-1">partículas finas · ideal &lt;15 µg/m³</p>
           </div>
-          <p id="val-pm25" class="text-2xl font-bold">—</p>
-          <p class="text-sub text-xs mt-2">µg/m³ — Ideal: &lt;15</p>
-        </div>
-        <div class="sensor-card">
-          <div class="flex items-center justify-between mb-3">
-            <p class="text-sub text-xs uppercase tracking-wide">Índice NOx</p>
-            <span class="status-chip"
-                  style="background:rgba(124,158,247,0.1); color:#7c9ef7;">Sensor</span>
+          <div class="px-4">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-1.5 text-sub">
+                <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
+                <p class="text-xs uppercase tracking-wide">Índice VOC</p>
+              </div>
+              <span id="badge-voc" class="status-chip"
+                    style="background:rgba(110,192,122,0.12); color:var(--color-verde);">—</span>
+            </div>
+            <p id="val-voc" class="text-xl font-bold">—</p>
+            <p class="text-sub text-xs mt-1">compostos voláteis · ideal &lt;100</p>
           </div>
-          <p id="val-nox" class="text-2xl font-bold">—</p>
-          <p class="text-sub text-xs mt-2">Óxidos de Nitrogênio</p>
-        </div>
-        <div class="sensor-card">
-          <div class="flex items-center justify-between mb-3">
-            <p class="text-sub text-xs uppercase tracking-wide">Luminosidade</p>
-            <span class="status-chip"
-                  style="background:rgba(124,158,247,0.1); color:#7c9ef7;">Lux</span>
+          <div class="px-4">
+            <div class="flex items-center gap-1.5 text-sub mb-1">
+              <i data-lucide="cloud-fog" class="w-3.5 h-3.5"></i>
+              <p class="text-xs uppercase tracking-wide">Índice NOx</p>
+            </div>
+            <p id="val-nox" class="text-xl font-bold">—</p>
+            <p class="text-sub text-xs mt-1">óxidos de nitrogênio</p>
           </div>
-          <p id="val-luz" class="text-2xl font-bold">—</p>
-          <p class="text-sub text-xs mt-2">Nível de iluminação ambiente</p>
+          <div class="px-4">
+            <div class="flex items-center gap-1.5 text-sub mb-1">
+              <i data-lucide="sun" class="w-3.5 h-3.5"></i>
+              <p class="text-xs uppercase tracking-wide">Luminosidade</p>
+            </div>
+            <p id="val-luz" class="text-xl font-bold">—</p>
+            <p class="text-sub text-xs mt-1">iluminação do ambiente</p>
+          </div>
         </div>
       </div>
     </div>
@@ -629,8 +676,8 @@
       <!-- Indicador de qual sala está sendo exibida -->
       <div class="mb-6 flex items-center gap-3">
         <div class="w-9 h-9 rounded-xl flex items-center justify-center"
-             style="background:rgba(124,158,247,0.15);">
-          <i data-lucide="building-2" class="w-5 h-5" style="color:#7c9ef7;"></i>
+             style="background:rgba(107,157,248,0.15);">
+          <i data-lucide="building-2" class="w-5 h-5" style="color:var(--color-accent);"></i>
         </div>
         <div>
           <p id="historico-sala-label" class="text-text text-sm font-medium">Histórico — Sala 1</p>
@@ -644,7 +691,7 @@
            em resolução bruta ou agregada (hora/dia), e exportar CSV.
       ============================================================ -->
       <div class="rounded-2xl border border-border p-5 mb-8 elevation-2" style="background:var(--color-panel);">
-        <p class="text-sub text-xs uppercase tracking-wide mb-3">Consultar período no banco de dados</p>
+        <p class="text-text text-sm font-medium mb-3">Consultar um período no banco de dados</p>
         <div class="flex flex-wrap items-end gap-3">
           <div>
             <label class="text-sub text-xs block mb-1" for="hq-sala">Sala</label>
@@ -666,9 +713,9 @@
               <option value="dia">Média por dia</option>
             </select>
           </div>
-          <button onclick="consultarHistorico()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(124,158,247,0.15); color:#7c9ef7;">Consultar</button>
-          <button id="btn-csv" onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(129,199,132,0.12); color:#81c784;">Exportar CSV</button>
-          <button id="hq-live-btn" onclick="voltarTempoReal()" style="display:none; background:rgba(255,183,77,0.12); color:#ffb74d;" class="rounded-lg px-4 py-2 text-sm font-medium">Voltar ao tempo real</button>
+          <button onclick="consultarHistorico()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(107,157,248,0.15); color:var(--color-accent);">Consultar</button>
+          <button id="btn-csv" onclick="exportarCSV()" class="rounded-lg px-4 py-2 text-sm font-medium" style="background:rgba(110,192,122,0.12); color:var(--color-verde);">Exportar CSV</button>
+          <button id="hq-live-btn" onclick="voltarTempoReal()" style="display:none; background:rgba(232,163,61,0.12); color:var(--color-ambar);" class="rounded-lg px-4 py-2 text-sm font-medium">Voltar ao tempo real</button>
         </div>
         <p id="hq-info" class="text-sub text-xs mt-3">Sem consulta ativa — exibindo dados em tempo real da sala selecionada.</p>
       </div>
@@ -679,8 +726,8 @@
              style="background:var(--color-panel);">
           <div class="flex items-center gap-3 mb-6">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="activity" class="w-4 h-4" style="color:#7c9ef7;"></i>
+                 style="background:rgba(107,157,248,0.1);">
+              <i data-lucide="activity" class="w-4 h-4" style="color:var(--color-accent);"></i>
             </div>
             <div>
               <p class="text-text text-sm font-medium">CO₂ vs Poluentes</p>
@@ -693,8 +740,8 @@
              style="background:var(--color-panel);">
           <div class="flex items-center gap-3 mb-6">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center"
-                 style="background:rgba(124,158,247,0.1);">
-              <i data-lucide="thermometer-sun" class="w-4 h-4" style="color:#7c9ef7;"></i>
+                 style="background:rgba(107,157,248,0.1);">
+              <i data-lucide="thermometer-sun" class="w-4 h-4" style="color:var(--color-accent);"></i>
             </div>
             <div>
               <p class="text-text text-sm font-medium">Temperatura vs Umidade</p>
@@ -756,8 +803,8 @@
       <div class="mb-6 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl flex items-center justify-center"
-               style="background:rgba(229,115,115,0.12);">
-            <i data-lucide="bell-ring" class="w-5 h-5" style="color:#e57373;"></i>
+               style="background:rgba(224,92,92,0.12);">
+            <i data-lucide="bell-ring" class="w-5 h-5" style="color:var(--color-vermelho);"></i>
           </div>
           <div>
             <p class="text-text text-sm font-medium">Incidentes — Alertas de Qualidade do Ar</p>
@@ -765,7 +812,7 @@
           </div>
         </div>
         <button onclick="fetchAlertas()" class="rounded-lg px-4 py-2 text-sm font-medium"
-                style="background:rgba(124,158,247,0.15); color:#7c9ef7;">Atualizar</button>
+                style="background:rgba(107,157,248,0.15); color:var(--color-accent);">Atualizar</button>
       </div>
 
       <div class="rounded-2xl border border-border overflow-hidden elevation-2"
@@ -818,7 +865,7 @@
             <input id="cfg-sala-nome" placeholder="Nome da nova sala (ex.: Biblioteca)"
                    class="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
             <button onclick="novaSala()" class="rounded-lg px-4 py-2 text-sm font-medium"
-                    style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+                    style="background:rgba(110,192,122,0.12); color:var(--color-verde);">Adicionar</button>
           </div>
           <div class="overflow-auto" style="max-height:300px;">
             <table class="data-table w-full border-collapse">
@@ -838,7 +885,7 @@
             <input id="cfg-dest-numero" placeholder="Número ou grupo"
                    class="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text">
             <button onclick="novoDestinatario()" class="rounded-lg px-4 py-2 text-sm font-medium"
-                    style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+                    style="background:rgba(110,192,122,0.12); color:var(--color-verde);">Adicionar</button>
           </div>
           <div class="overflow-auto" style="max-height:300px;">
             <table class="data-table w-full border-collapse">
@@ -868,7 +915,7 @@
             <option value="admin">admin</option>
           </select>
           <button onclick="novoUsuario()" class="rounded-lg px-4 py-2 text-sm font-medium"
-                  style="background:rgba(129,199,132,0.12); color:#81c784;">Adicionar</button>
+                  style="background:rgba(110,192,122,0.12); color:var(--color-verde);">Adicionar</button>
         </div>
         <div class="overflow-auto" style="max-height:300px;">
           <table class="data-table w-full border-collapse">
@@ -885,12 +932,17 @@
   <!-- ============================================================
        FOOTER
   ============================================================ -->
+
   <footer class="border-t border-border mt-12 py-6 px-6">
-    <div class="max-w-screen-xl mx-auto flex items-center justify-between text-sub text-xs">
-      <span>School Air · Monitor Ambiental IoT Escolar · 10 Salas</span>
-      <span>Atualiza a cada 30 segundos · API: /api/sala{1-10}</span>
+    <div class="max-w-screen-xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(107,157,248,0.15);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/></svg></div>
+        <span class="text-lg font-medium tracking-tight whitespace-nowrap">School <span style="color:var(--color-accent);">Air</span></span>
+      </div>
+      <span class="text-sub text-xs">10 Salas Monitoradas</span>
     </div>
   </footer>
+
 
 
   <!-- ============================================================
@@ -902,6 +954,33 @@
        Converte as tags <i data-lucide="nome"> em SVGs reais.
     =========================================================== */
     lucide.createIcons();
+
+    /* ===== Tema claro/escuro: persistido, respeita o sistema na 1ª visita ===== */
+    function alternarTema() {
+      const novo = document.documentElement.dataset.tema === 'claro' ? 'escuro' : 'claro';
+      document.documentElement.dataset.tema = novo;
+      try { localStorage.setItem('schoolair_tema', novo); } catch (e) {}
+    }
+    (function () {
+      let t = null;
+      try { t = localStorage.getItem('schoolair_tema'); } catch (e) {}
+      if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'escuro';
+      document.documentElement.dataset.tema = t;
+    })();
+
+    /* ===== Menu lateral: estado aberto/fechado persistido ===== */
+    function alternarMenu() {
+      const novo = document.body.dataset.menu === 'fechado' ? 'aberto' : 'fechado';
+      document.body.dataset.menu = novo;
+      try { localStorage.setItem('schoolair_menu', novo); } catch (e) {}
+    }
+    (function () {
+      let estado = null;
+      try { estado = localStorage.getItem('schoolair_menu'); } catch (e) {}
+      if (!estado) estado = window.innerWidth < 1024 ? 'fechado' : 'aberto';
+      document.body.dataset.menu = estado;
+    })();
+
 
     /* ===========================================================
        AUTENTICAÇÃO (v2 — Fase 3)
@@ -931,7 +1010,7 @@
 
     async function fazerLogin() {
       const erro = document.getElementById('login-erro');
-      erro.style.color = '#e57373';
+      erro.style.color = 'var(--color-vermelho)';
       erro.textContent = '';
       try {
         const r = await fetch('/api/auth/login', {
@@ -958,11 +1037,11 @@
       const erro = document.getElementById('login-erro');
       const usuario = document.getElementById('login-usuario').value.trim();
       if (!usuario) {
-        erro.style.color = '#e57373';
+        erro.style.color = 'var(--color-vermelho)';
         erro.textContent = 'Digite o usuário acima para recuperar a senha.';
         return;
       }
-      erro.style.color = '#9e9e9e';
+      erro.style.color = 'var(--color-sub)';
       erro.textContent = 'Solicitando…';
       try {
         const r = await fetch('/api/auth/recuperar', {
@@ -971,10 +1050,10 @@
           body: JSON.stringify({ usuario }),
         });
         const d = await r.json();
-        erro.style.color = '#81c784';
+        erro.style.color = 'var(--color-verde)';
         erro.textContent = d.mensagem || 'Solicitação registrada.';
       } catch (e) {
-        erro.style.color = '#e57373';
+        erro.style.color = 'var(--color-vermelho)';
         erro.textContent = 'Erro de conexão: ' + e.message;
       }
     }
@@ -1060,19 +1139,19 @@
     =========================================================== */
     const STATUS_STYLES = {
       excelente: {
-        color: '#81c784', bgColor: 'rgba(129,199,132,0.12)',
-        barColor: '#81c784', label: 'Excelente', icon: 'check-circle',
-        badgeBg: 'rgba(129,199,132,0.12)', badgeColor: '#81c784', badgeText: 'Ótimo',
+        color: 'var(--color-verde)', bgColor: 'rgba(110,192,122,0.12)',
+        barColor: 'var(--color-verde)', label: 'Excelente', icon: 'check-circle',
+        badgeBg: 'rgba(110,192,122,0.12)', badgeColor: 'var(--color-verde)', badgeText: 'Ótimo',
       },
       atencao: {
-        color: '#ffb74d', bgColor: 'rgba(255,183,77,0.12)',
-        barColor: '#ffb74d', label: 'Atenção', icon: 'alert-triangle',
-        badgeBg: 'rgba(255,183,77,0.12)', badgeColor: '#ffb74d', badgeText: 'Atenção',
+        color: 'var(--color-ambar)', bgColor: 'rgba(232,163,61,0.12)',
+        barColor: 'var(--color-ambar)', label: 'Atenção', icon: 'alert-triangle',
+        badgeBg: 'rgba(232,163,61,0.12)', badgeColor: 'var(--color-ambar)', badgeText: 'Atenção',
       },
       critico: {
-        color: '#e57373', bgColor: 'rgba(229,115,115,0.12)',
-        barColor: '#e57373', label: 'Crítica / Prejudicial', icon: 'shield-alert',
-        badgeBg: 'rgba(229,115,115,0.12)', badgeColor: '#e57373', badgeText: 'Crítico',
+        color: 'var(--color-vermelho)', bgColor: 'rgba(224,92,92,0.12)',
+        barColor: 'var(--color-vermelho)', label: 'Crítica / Prejudicial', icon: 'shield-alert',
+        badgeBg: 'rgba(224,92,92,0.12)', badgeColor: 'var(--color-vermelho)', badgeText: 'Crítico',
       },
     };
 
@@ -1238,11 +1317,10 @@
         card.className = 'sala-overview-card';
         card.id = 'overview-card-' + i;
         card.innerHTML = `
-          <div class="top-bar" id="overview-bar-${i}" style="background:#525252;"></div>
           <div class="flex items-center gap-3 mb-3">
             <div class="w-10 h-10 rounded-xl flex items-center justify-center" id="overview-icon-wrap-${i}"
-                 style="background:rgba(82,82,82,0.2);">
-              <i data-lucide="loader" class="w-5 h-5" id="overview-icon-${i}" style="color:#525252;"></i>
+                 style="background:rgba(74,88,108,0.2);">
+              <i data-lucide="loader" class="w-5 h-5" id="overview-icon-${i}" style="color:var(--color-muted);"></i>
             </div>
             <div>
               <p class="text-text text-sm font-medium">${s.nome}</p>
@@ -1280,13 +1358,12 @@
       for (const s of SALAS) {
         const i = s.id;
         const data = allRoomsData[i];
-        const bar = document.getElementById('overview-bar-' + i);
         const iconWrap = document.getElementById('overview-icon-wrap-' + i);
         const icon = document.getElementById('overview-icon-' + i);
         const statusText = document.getElementById('overview-status-' + i);
         const tempText = document.getElementById('overview-temp-' + i);
         const co2Text = document.getElementById('overview-co2-' + i);
-        if (!bar) continue;
+        if (!iconWrap) continue;
 
         if (!data || data.length === 0) {
           statusText.textContent = 'Sem dados';
@@ -1297,7 +1374,6 @@
         const iaq = calcIAQ(latest);
         const style = getStyle(iaq.status);
 
-        bar.style.background = style.barColor;
         iconWrap.style.background = style.bgColor;
         icon.setAttribute('data-lucide', style.icon);
         icon.style.color = style.color;
@@ -1321,8 +1397,9 @@
       const iaq = calcIAQ(data);
       const style = getStyle(iaq.status);
 
-      // Hero card
-      document.getElementById('hero-bar').style.background = style.barColor;
+      // Hero card: o estado colore um lavado tonal sutil (sem faixa lateral)
+      document.getElementById('hero-card').style.background =
+        'linear-gradient(90deg, ' + style.bgColor + ', transparent 45%), var(--color-panel)';
       const heroIconWrap = document.getElementById('hero-icon-wrap');
       heroIconWrap.style.background = style.bgColor;
       const heroIcon = document.getElementById('hero-icon');
@@ -1389,9 +1466,9 @@
           data: {
             labels,
             datasets: [
-              { label: 'CO₂ (ppm)', data: co2Data, borderColor: '#7c9ef7', backgroundColor: 'rgba(124,158,247,0.08)', tension: 0.4, fill: true, pointRadius: 3 },
-              { label: 'VOC', data: vocData, borderColor: '#ffb74d', tension: 0.4, fill: false, pointRadius: 3 },
-              { label: 'NOx', data: noxData, borderColor: '#e57373', tension: 0.4, fill: false, pointRadius: 3 },
+              { label: 'CO₂ (ppm)', data: co2Data, borderColor: '#5b8def', backgroundColor: 'rgba(91,141,239,0.10)', tension: 0.4, fill: true, pointRadius: 3 },
+              { label: 'VOC', data: vocData, borderColor: '#d99a34', tension: 0.4, fill: false, pointRadius: 3 },
+              { label: 'NOx', data: noxData, borderColor: '#d45454', tension: 0.4, fill: false, pointRadius: 3 },
             ],
           },
           options: chartOptions('Concentração / Índice'),
@@ -1412,8 +1489,8 @@
           data: {
             labels,
             datasets: [
-              { label: 'Temperatura (°C)', data: tempData, borderColor: '#e57373', backgroundColor: 'rgba(229,115,115,0.08)', tension: 0.4, fill: true, pointRadius: 3, yAxisID: 'yTemp' },
-              { label: 'Umidade (%)', data: humData, borderColor: '#81c784', tension: 0.4, fill: false, pointRadius: 3, yAxisID: 'yHum' },
+              { label: 'Temperatura (°C)', data: tempData, borderColor: '#d45454', backgroundColor: 'rgba(212,84,84,0.10)', tension: 0.4, fill: true, pointRadius: 3, yAxisID: 'yTemp' },
+              { label: 'Umidade (%)', data: humData, borderColor: '#4da65c', tension: 0.4, fill: false, pointRadius: 3, yAxisID: 'yHum' },
             ],
           },
           options: chartOptionsDualAxis(),
@@ -1427,16 +1504,18 @@
     }
 
     function chartOptions(yLabel) {
+      // Cores neutras fixas: o canvas não resolve var() do CSS, então os
+      // gráficos usam tons médios legíveis nos temas claro e escuro.
       return {
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: '#9e9e9e', font: { family: 'Roboto', size: 12 }, boxWidth: 14, padding: 16 } },
-          tooltip: { backgroundColor: '#2c2c2c', borderColor: '#3a3a3a', borderWidth: 1, titleColor: '#e0e0e0', bodyColor: '#bdbdbd', cornerRadius: 8, padding: 12 },
+          legend: { labels: { color: '#8a93a3', font: { family: 'IBM Plex Sans', size: 12 }, boxWidth: 14, padding: 16 } },
+          tooltip: { backgroundColor: '#242a34', borderColor: '#3a4150', borderWidth: 1, titleColor: '#e6e9ef', bodyColor: '#c3c9d4', cornerRadius: 6, padding: 12 },
         },
         scales: {
-          x: { ticks: { color: '#9e9e9e', font: { size: 11 }, maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.05)' }, border: { color: '#3a3a3a' } },
-          y: { ticks: { color: '#9e9e9e', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' }, border: { color: '#3a3a3a' }, title: { display: true, text: yLabel, color: '#9e9e9e' } },
+          x: { ticks: { color: '#8a93a3', font: { size: 11 }, maxRotation: 45 }, grid: { color: 'rgba(138,147,163,0.18)' }, border: { color: '#8a93a3' } },
+          y: { ticks: { color: '#8a93a3', font: { size: 11 } }, grid: { color: 'rgba(138,147,163,0.18)' }, border: { color: '#8a93a3' }, title: { display: true, text: yLabel, color: '#8a93a3' } },
         },
       };
     }
@@ -1446,13 +1525,13 @@
         responsive: true,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { labels: { color: '#9e9e9e', font: { family: 'Roboto', size: 12 }, boxWidth: 14, padding: 16 } },
-          tooltip: { backgroundColor: '#2c2c2c', borderColor: '#3a3a3a', borderWidth: 1, titleColor: '#e0e0e0', bodyColor: '#bdbdbd', cornerRadius: 8, padding: 12 },
+          legend: { labels: { color: '#8a93a3', font: { family: 'IBM Plex Sans', size: 12 }, boxWidth: 14, padding: 16 } },
+          tooltip: { backgroundColor: '#242a34', borderColor: '#3a4150', borderWidth: 1, titleColor: '#e6e9ef', bodyColor: '#c3c9d4', cornerRadius: 6, padding: 12 },
         },
         scales: {
-          x: { ticks: { color: '#9e9e9e', font: { size: 11 }, maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.05)' }, border: { color: '#3a3a3a' } },
-          yTemp: { type: 'linear', position: 'left', ticks: { color: '#e57373' }, grid: { color: 'rgba(255,255,255,0.05)' }, border: { color: '#e57373' }, title: { display: true, text: 'Temperatura (°C)', color: '#e57373' } },
-          yHum: { type: 'linear', position: 'right', ticks: { color: '#81c784' }, grid: { drawOnChartArea: false }, border: { color: '#81c784' }, title: { display: true, text: 'Umidade (%)', color: '#81c784' } },
+          x: { ticks: { color: '#8a93a3', font: { size: 11 }, maxRotation: 45 }, grid: { color: 'rgba(138,147,163,0.18)' }, border: { color: '#8a93a3' } },
+          yTemp: { type: 'linear', position: 'left', ticks: { color: '#d45454' }, grid: { color: 'rgba(138,147,163,0.18)' }, border: { color: '#d45454' }, title: { display: true, text: 'Temperatura (°C)', color: '#d45454' } },
+          yHum: { type: 'linear', position: 'right', ticks: { color: '#4da65c' }, grid: { drawOnChartArea: false }, border: { color: '#4da65c' }, title: { display: true, text: 'Umidade (%)', color: '#4da65c' } },
         },
       };
     }
@@ -1473,8 +1552,8 @@
         const dt = new Date(d.data);
         const dateStr = dt.toLocaleDateString('pt-BR') + ' ' +
           dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const co2Style = classCO2(d.co2) === 'critico' ? 'style="color:#e57373;"' :
-          classCO2(d.co2) === 'atencao' ? 'style="color:#ffb74d;"' : '';
+        const co2Style = classCO2(d.co2) === 'critico' ? 'style="color:var(--color-vermelho);"' :
+          classCO2(d.co2) === 'atencao' ? 'style="color:var(--color-ambar);"' : '';
         return `<tr>
           <td>${dateStr}</td><td>${fx(d.temperatura, 1)}</td><td>${fx(d.umidade, 1)}</td>
           <td ${co2Style}>${fx(d.co2)}</td><td>${fx(d.pm1)}</td><td>${fx(d.pm25)}</td><td>${fx(d.pm4)}</td>
@@ -1745,13 +1824,13 @@
           const dt = new Date(a.enviado_em);
           const quando = dt.toLocaleDateString('pt-BR') + ' ' +
             dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-          const nivelCor = a.nivel === 'critico' ? '#e57373' : '#ffb74d';
+          const nivelCor = a.nivel === 'critico' ? 'var(--color-vermelho)' : 'var(--color-ambar)';
           const envio = a.erro_envio
-            ? '<span style="color:#e57373;" title="' + String(a.erro_envio).replace(/"/g, '&quot;') + '">falha no envio</span>'
-            : '<span style="color:#81c784;">enviado</span>';
+            ? '<span style="color:var(--color-vermelho);" title="' + String(a.erro_envio).replace(/"/g, '&quot;') + '">falha no envio</span>'
+            : '<span style="color:var(--color-verde);">enviado</span>';
           const norm = a.normalizado_em
             ? new Date(a.normalizado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-            : '<span style="color:#ffb74d;">em aberto</span>';
+            : '<span style="color:var(--color-ambar);">em aberto</span>';
           return '<tr>' +
             '<td>' + quando + '</td>' +
             '<td>' + (a.sala_nome || ('Sala ' + a.sala)) + '</td>' +
