@@ -298,7 +298,7 @@ Se nenhum dispositivo aparecer, verifique: fios soltos, pull-ups ausentes, ou al
 
 ## 🚧 Roadmap v2 — Novas Funcionalidades (decisões do orientador em 02/09/2026)
 
-> **Status:** **Todas as 5 fases do software implementadas em 02/09/2026.** Pendente apenas a validação com hardware real (checklist em [`docs/VALIDACAO.md`](docs/VALIDACAO.md)). As seções v1 deste README valem para a tag `v1-serverless`.
+> **Status:** **Todas as 5 fases do software implementadas em 02/09/2026**, mais as adições de setembro: proteção da borda com Cloudflare Access (service token da frota), modo de desenvolvimento via gateway n8n, gestão de usuários com WhatsApp e recuperação de senha, redesign do portal (menu lateral, temas claro/escuro, avaliação heurística 27/40 com todas as correções aplicadas) e **firmware pronto por sala baixado direto do portal**. Pendente apenas a validação com hardware real (checklist em [`docs/VALIDACAO.md`](docs/VALIDACAO.md)). As seções v1 deste README valem para a tag `v1-serverless`.
 
 ### Onde cada parte roda — v1 vs v2
 
@@ -352,7 +352,7 @@ Fluxo para adicionar uma sala **pelo portal**, sem editar código:
 3. O arquivo é **importado no ESP32 novo** pela página web local do firmware (upload) e salvo na memória flash (NVS/LittleFS);
 4. O ESP32 reinicia e começa a transmitir; a sala **aparece automaticamente** no dashboard — a lista de salas passará a vir de `GET /api/salas` (fim do `TOTAL_SALAS` fixo no HTML).
 
-> Quando a v2 for implementada, este fluxo substitui o processo manual de copiar arquivos `salaN.js` descrito na seção "Como Adicionar ou Remover Salas".
+> **Implementado — e evoluído:** hoje o portal baixa direto o **firmware pronto** da sala (`sala-<id>.ino`, para placa vazia); o arquivo JSON continua disponível para reprovisionar placas já gravadas. Ver a seção "Provisionando um ESP32 (fluxo completo)".
 
 ### 5. Simulação realista
 
@@ -429,7 +429,7 @@ Estrutura atual do repositório:
 ```
 backend/            → API Node.js (Express) + Dockerfile
 frontend/           → dashboard (index.html) + nginx.conf + Dockerfile + vercel.json
-esp32/              → firmware (INALTERADO — mesma rota /api/salaN e mesmo payload)
+esp32/              → firmware (provisionável: NVS via /config, embutido via portal, buffer offline, simulação realista)
 docker-compose.yml  → PostgreSQL + backend + frontend (+ Evolution API na Fase 2)
 docs/               → plano de ação
 ```
@@ -465,7 +465,7 @@ A aba **Histórico** agora tem um painel *"Consultar período no banco de dados"
 
 ### ESP32
 
-Nada muda no firmware além da constante `BASE_URL`, que deve apontar para a URL pública do backend (ex.: `https://api.seu-dominio.com/api/sala` via Cloudflare Tunnel) em vez da Vercel.
+O caminho normal é **baixar o firmware pronto da sala no portal** (aba Configurações → "baixar firmware"): o `sala-<id>.ino` já vem com sala, token e URL do backend embutidos — só preencher o Wi-Fi e gravar. O `.ino` genérico do repositório serve para o modo simulação (ajuste a `BASE_URL`) ou para placas que serão provisionadas depois pela página local `/config`.
 
 ### Vercel (frontend estático)
 
