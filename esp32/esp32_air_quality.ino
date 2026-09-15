@@ -405,6 +405,15 @@ bool enviarParaBackend(int salaNumero, const char* json) {
     url = String(BASE_URL) + String(salaNumero);
   }
 
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    /**
+     * URL sem esquema (ex.: "dominio.com" vindo do stack ou digitado na
+     * página /config): o HTTPClient não abre conexão sem "http(s)://" e o
+     * POST falharia com -1. Assume https, o caso do backend público.
+     */
+    url = "https://" + url;
+  }
+
   HTTPClient http;
   WiFiClientSecure clienteTls;  // precisa existir até o fim do POST
   if (url.startsWith("https://")) {

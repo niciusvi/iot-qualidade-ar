@@ -572,6 +572,18 @@ app.put('/api/salas/:id(\\d+)', exigirPerfil('admin'), async (req, res, next) =>
  * importado na página web local do firmware (rota /config do dispositivo).
  * Se a sala ainda não tem token (salas 1-10 do seed), um é gerado agora.
  */
+/**
+ * PUBLIC_BACKEND_URL normalizada: aceita o valor com ou sem esquema
+ * ("https://api.x.com" ou só "api.x.com") e sem barra final. Sem isto, um
+ * valor sem "https://" gera firmware com URL que o ESP32 não consegue abrir
+ * (todo POST falha com -1).
+ */
+function urlBackendPublica() {
+  let url = (process.env.PUBLIC_BACKEND_URL || '').trim().replace(/\/+$/, '');
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  return url;
+}
+
 app.get('/api/salas/:id(\\d+)/provisionamento', exigirPerfil('admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -588,7 +600,7 @@ app.get('/api/salas/:id(\\d+)/provisionamento', exigirPerfil('admin'), async (re
       sala: id,
       nome,
       token,
-      backend_url: process.env.PUBLIC_BACKEND_URL || '',
+      backend_url: urlBackendPublica(),
       intervalo_envio_s: 30,
       // Cloudflare Access (Service Token): quando a API pública fica atrás do
       // Access, o ESP32 precisa apresentar estas credenciais em cada request.
@@ -616,7 +628,7 @@ app.get('/api/salas/:id(\\d+)/firmware', exigirPerfil('admin'), async (req, res,
       await pool.query('UPDATE salas SET token = $2 WHERE id = $1', [id, token]);
     }
     const fonte = await readFile(new URL('../esp32/esp32_air_quality.ino', import.meta.url), 'utf8');
-    const urlPublica = process.env.PUBLIC_BACKEND_URL || '';
+    const urlPublica = urlBackendPublica();
     let custom = fonte
       .replace('bool MODO_SIMULACAO = true;', 'bool MODO_SIMULACAO = false;')
       .replace('const int   SALA_COMPILADA = 0;', `const int   SALA_COMPILADA = ${id};`)
