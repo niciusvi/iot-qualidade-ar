@@ -443,6 +443,17 @@ bool enviarParaBackend(int salaNumero, const char* json) {
   Serial.printf("Sala %d - POST %d | RAM: %u bytes\n",
     salaNumero, code, ESP.getFreeHeap());
 
+  if (code <= 0) {
+    /**
+     * Código negativo = a conexão nem aconteceu (DNS, TLS ou rede fora).
+     * Imprimir a URL alvo denuncia na hora uma placa mal provisionada —
+     * por exemplo, um firmware baixado de um backend sem PUBLIC_BACKEND_URL,
+     * que sai com o placeholder e não resolve DNS.
+     */
+    Serial.printf("  ERRO de conexao com %s (%s)\n",
+      url.c_str(), HTTPClient::errorToString(code).c_str());
+  }
+
   http.end(); // Libera recursos de rede do microcontrolador
   return (code >= 200 && code < 300);  // Fase 4: informa se o envio deu certo
 }
@@ -776,6 +787,12 @@ void setup() {
    * Isso é útil quando há vários ESP32 e é preciso saber rapidamente
    * qual sala cada um está atendendo.
    */
+  if (cfgBackendUrl.length() == 0 && String(BASE_URL).indexOf("SEU-BACKEND-PUBLICO") >= 0) {
+    Serial.println("[PROV] ATENCAO: nenhuma URL de backend configurada — todo envio vai falhar (POST -1).");
+    Serial.println("[PROV] Defina PUBLIC_BACKEND_URL no stack e baixe o firmware de novo,");
+    Serial.println("[PROV] ou edite BASE_URL no codigo / provisione pela pagina /config.");
+  }
+
   Serial.printf("Modo: %s\n", MODO_SIMULACAO ? "SIMULAÇÃO" : "PRODUÇÃO (sala única)");
   if (!MODO_SIMULACAO) {
     Serial.printf("Sala pertencente: %d\n", SALA_PERTENCENTE);
