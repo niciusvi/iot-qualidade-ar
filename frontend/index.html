@@ -477,8 +477,6 @@
     button.sala-overview-card { font: inherit; color: inherit; text-align: left; width: 100%; display: block; }
 
     /* Loader que gira de verdade enquanto o cartão carrega */
-    @keyframes girar { to { transform: rotate(360deg); } }
-    svg.lucide-loader { animation: girar 1.2s linear infinite; }
 
     /* Chip de status */
     .status-chip {
@@ -1614,7 +1612,7 @@
           <div class="flex items-center gap-3 mb-3">
             <div class="w-10 h-10 rounded-xl flex items-center justify-center" id="overview-icon-wrap-${i}"
                  style="background:rgba(74,88,108,0.2);">
-              <i data-lucide="loader" class="w-5 h-5" id="overview-icon-${i}" style="color:var(--color-muted);"></i>
+              <i data-lucide="minus" class="w-5 h-5" id="overview-icon-${i}" style="color:var(--color-muted);"></i>
             </div>
             <div>
               <p class="text-text text-sm font-medium">${s.nome}</p>
@@ -1669,8 +1667,7 @@
         const style = getStyle(iaq.status);
 
         iconWrap.style.background = style.bgColor;
-        icon.setAttribute('data-lucide', style.icon);
-        icon.style.color = style.color;
+        trocarIconeLucide(icon, style.icon, style.color);
         statusText.textContent = style.label;
         statusText.style.color = style.color;
 
@@ -1703,6 +1700,22 @@
        indicada por selectedSala.
     =========================================================== */
     /** Leitura mais nova que ~3 ciclos de envio (90 s) ainda conta como "agora". */
+    /**
+     * Troca um ícone lucide já renderizado. setAttribute('data-lucide') num
+     * <svg> existente não re-renderiza (createIcons só converte <i>): aqui o
+     * elemento vira <i> de novo, preservando id e classes de tamanho, e o
+     * próximo lucide.createIcons() o converte com o ícone certo.
+     */
+    function trocarIconeLucide(el, nome, cor) {
+      const novo = document.createElement('i');
+      novo.setAttribute('data-lucide', nome);
+      novo.id = el.id;
+      novo.className = Array.from(el.classList)
+        .filter(c => c !== 'lucide' && !c.startsWith('lucide-')).join(' ');
+      novo.style.color = cor;
+      el.replaceWith(novo);
+    }
+
     function leituraRecente(d) {
       return d && (Date.now() - new Date(d.data).getTime()) < 90 * 1000;
     }
@@ -1725,8 +1738,7 @@
       const heroIconWrap = document.getElementById('hero-icon-wrap');
       heroIconWrap.style.background = style.bgColor;
       const heroIcon = document.getElementById('hero-icon');
-      heroIcon.setAttribute('data-lucide', style.icon);
-      heroIcon.style.color = style.color;
+      trocarIconeLucide(heroIcon, style.icon, style.color);
       const heroStatus = document.getElementById('hero-status');
       heroStatus.textContent = style.label;
       heroStatus.style.color = style.color;
