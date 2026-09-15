@@ -19,11 +19,20 @@
  * NORMALIZAÇÃO: quando o parâmetro volta ao nível seguro, o alerta aberto é
  * fechado e uma mensagem de "normalizado" é enviada.
  *
- * ENVIO: HTTP POST para a Evolution API da própria stack
- *   {EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}
- * para cada destinatário ativo da tabela `destinatarios`.
- * Falhas de envio NÃO são perdidas: ficam registradas em alertas.erro_envio
- * e aparecem na aba Incidentes do dashboard.
+ * ENVIO CONSOLIDADO (decisão do dono em 15/09/2026): alertas não saem um a
+ * um — entram em FILAS e viram UMA mensagem agrupada por flush, para não
+ * inundar o WhatsApp quando várias salas degradam juntas:
+ *   - fila CRÍTICA (só CO₂ crítico): flush a cada ALERTA_CRITICO_SEGUNDOS
+ *     (padrão 20 s) — rapidez preservada, mas várias salas críticas no mesmo
+ *     ciclo viram uma mensagem só;
+ *   - fila DIGEST (todo o resto + normalizações): flush a cada
+ *     ALERTA_DIGEST_SEGUNDOS (padrão 300 s = 5 min).
+ * Se TODOS os envios de um flush falharem, a fila é MANTIDA e tenta de novo
+ * na próxima rodada — foi a falta de retry que calou os alertas quando o
+ * gateway quebrou em 15/09/2026. O transporte é o mesmo de antes (Evolution
+ * da stack, ou gateway n8n quando N8N_WEBHOOK_URL está definida), para cada
+ * destinatário ativo da tabela `destinatarios`; o resultado fica em
+ * alertas.destinatarios/erro_envio e aparece na aba Incidentes.
  */
 import { pool } from './db.js';
 
@@ -43,6 +52,10 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 
 const COOLDOWN_MIN = 30;        // 1 alerta a cada 30 min por sala/parâmetro/nível
 const GAP_MAX_SEG = 180;        // intervalo > 3 min entre leituras quebra a "sequência ruim"
+
+// Consolidação (pisos de segurança: crítica nunca abaixo de 5 s, digest de 60 s)
+const CRITICO_SEG = Math.max(5, Number(process.env.ALERTA_CRITICO_SEGUNDOS) || 20);
+const DIGEST_SEG = Math.max(60, Number(process.env.ALERTA_DIGEST_SEGUNDOS) || 300);
 
 /** Regras em ordem de prioridade (crítico primeiro). */
 export const REGRAS = [
@@ -154,6 +167,81 @@ export async function enviarWhatsApp(texto) {
   return resultado;
 }
 
+/**
+ * Filas de consolidação: chave sala:parametro:nivel:tipo → evento mais
+ * recente (Map deduplica sozinho; o tamanho é limitado por salas × regras).
+ */
+const filaDigest = new Map();
+const filaCritica = new Map();
+
+function enfileirarEvento(evento) {
+  const fila = (evento.tipo === 'alerta' && evento.parametro === 'co2' && evento.nivel === 'critico')
+    ? filaCritica : filaDigest;
+  fila.set(`${evento.sala}:${evento.parametro}:${evento.nivel}:${evento.tipo}`, evento);
+}
+
+function linhaEvento(e) {
+  const valor = fmtValor(e.valor, e.unidade);
+  return e.tipo === 'alerta'
+    ? `• ${e.salaNome} — ${NOMES_PARAM[e.parametro]} ${valor} há ${e.minutos} min (${e.limiteDesc})`
+    : `• ${e.salaNome} — ${NOMES_PARAM[e.parametro]} ${valor}`;
+}
+
+export function montarMensagem(eventos, ehCritica) {
+  const alertas = eventos.filter((e) => e.tipo === 'alerta');
+  const normalizados = eventos.filter((e) => e.tipo === 'normalizado');
+  const partes = [];
+  if (ehCritica) {
+    partes.push('🚨 *CO₂ CRÍTICO — ventilar imediatamente*');
+    partes.push(...alertas.map(linhaEvento));
+    partes.push(REGRAS[0].recomendacao);
+  } else {
+    if (alertas.length) {
+      partes.push(`⚠️ *Qualidade do ar — ${alertas.length} condição(ões) em alerta*`);
+      partes.push(...alertas.map(linhaEvento));
+    }
+    if (normalizados.length) {
+      partes.push('✅ *Normalizado:*');
+      partes.push(...normalizados.map(linhaEvento));
+    }
+  }
+  if (DASHBOARD_URL) partes.push(`Painel: ${DASHBOARD_URL}`);
+  return partes.join('\n');
+}
+
+/**
+ * Descarrega uma fila numa ÚNICA mensagem para todos os destinatários.
+ * Sucesso parcial conta como entregue (alguém foi avisado); se TODOS
+ * falharem, a fila fica intacta e a próxima rodada tenta de novo.
+ */
+async function descarregarFila(fila, ehCritica) {
+  if (fila.size === 0) return;
+  const eventos = [...fila.values()];
+  const envio = await enviarWhatsApp(montarMensagem(eventos, ehCritica));
+  const ids = eventos.filter((e) => e.alertaId).map((e) => e.alertaId);
+  if (ids.length) {
+    await pool.query(
+      'UPDATE alertas SET destinatarios = $2, erro_envio = $3 WHERE id = ANY($1)',
+      [ids, envio.enviados.join(',') || null, envio.erros.join(' | ') || null]
+    );
+  }
+  if (envio.enviados.length > 0) fila.clear();
+  else console.warn('[alertas] fila mantida para retry:', envio.erros.join(' | '));
+}
+
+let descarregando = false;
+async function rodarFila(fila, ehCritica) {
+  if (descarregando) return;   // serializa os flushes (envio pode levar >20 s)
+  descarregando = true;
+  try { await descarregarFila(fila, ehCritica); }
+  catch (err) { console.error('[alertas] descarga falhou:', err.message); }
+  finally { descarregando = false; }
+}
+
+// unref(): os timers não seguram o processo vivo em scripts e testes
+setInterval(() => rodarFila(filaCritica, true), CRITICO_SEG * 1000).unref();
+setInterval(() => rodarFila(filaDigest, false), DIGEST_SEG * 1000).unref();
+
 /** Duração (ms) da sequência ininterrupta de leituras ruins terminando na mais recente. */
 function duracaoStreak(leituras, regra) {
   if (leituras.length === 0 || !regra.teste(leituras[0][regra.parametro])) return -1;
@@ -208,11 +296,12 @@ export async function avaliarAlertas(sala) {
       if (!regra || regra.teste(atual[regra.parametro])) continue;   // ainda ruim → mantém aberto
 
       await pool.query('UPDATE alertas SET normalizado_em = now() WHERE id = $1', [alerta.id]);
-      const msg = `✅ ${salaNome}: ${NOMES_PARAM[regra.parametro]} normalizado ` +
-        `(${fmtValor(atual[regra.parametro], regra.unidade)}, ${regra.limiteDesc}).`;
-      const envio = await enviarWhatsApp(msg);
-      if (envio.erros.length) console.warn('[alertas] normalização não enviada:', envio.erros.join(' | '));
-      console.log(`[alertas] ${salaNome}: ${regra.parametro}/${regra.nivel} normalizado.`);
+      enfileirarEvento({
+        tipo: 'normalizado', sala, salaNome,
+        parametro: regra.parametro, nivel: regra.nivel,
+        valor: atual[regra.parametro], unidade: regra.unidade, limiteDesc: regra.limiteDesc,
+      });
+      console.log(`[alertas] ${salaNome}: ${regra.parametro}/${regra.nivel} normalizado (sai no próximo digest).`);
     }
 
     // ---- 2. NOVOS ALERTAS: condição persistente + cooldown ----
@@ -235,27 +324,26 @@ export async function avaliarAlertas(sala) {
 
       const valor = atual[regra.parametro];
       const minutos = Math.max(1, Math.round(duracao / 60000));
-      const emoji = regra.nivel === 'critico' ? '🚨' : '⚠️';
-      const mensagem =
-        `${emoji} *${salaNome}* — ${NOMES_PARAM[regra.parametro]} em ${fmtValor(valor, regra.unidade)} ` +
-        `há ${minutos} min (${regra.limiteDesc}).\n` +
-        `Recomendação: ${regra.recomendacao}` +
-        (DASHBOARD_URL ? `\nPainel: ${DASHBOARD_URL}` : '');
+      const mensagem = linhaEvento({
+        tipo: 'alerta', salaNome, parametro: regra.parametro,
+        valor, unidade: regra.unidade, minutos, limiteDesc: regra.limiteDesc,
+      });
 
-      const envio = await enviarWhatsApp(mensagem);
-      await pool.query(
+      // O registro nasce "na fila"; o flush consolida a mensagem única e
+      // atualiza destinatarios/erro_envio deste id (Incidentes fica fiel).
+      const { rows: criado } = await pool.query(
         `INSERT INTO alertas (sala, parametro, nivel, valor, limite, mensagem, destinatarios, erro_envio)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          sala, regra.parametro, regra.nivel, valor, regra.limiteDesc, mensagem,
-          envio.enviados.join(',') || null,
-          envio.erros.join(' | ') || null,
-        ]
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, 'na fila de envio')
+         RETURNING id::int AS id`,
+        [sala, regra.parametro, regra.nivel, valor, regra.limiteDesc, mensagem]
       );
-      console.log(
-        `[alertas] ${salaNome}: ${regra.parametro}/${regra.nivel} disparado ` +
-        `(${envio.enviados.length} enviados, ${envio.erros.length} erros).`
-      );
+      enfileirarEvento({
+        tipo: 'alerta', alertaId: criado[0].id, sala, salaNome,
+        parametro: regra.parametro, nivel: regra.nivel,
+        valor, unidade: regra.unidade, minutos, limiteDesc: regra.limiteDesc,
+      });
+      const nomeFila = (regra.parametro === 'co2' && regra.nivel === 'critico') ? 'crítica' : 'digest';
+      console.log(`[alertas] ${salaNome}: ${regra.parametro}/${regra.nivel} na fila ${nomeFila}.`);
     }
   } catch (err) {
     console.error('[alertas] falha na avaliação:', err.message);

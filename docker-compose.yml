@@ -94,6 +94,9 @@ services:
       # DEV: se definida, os envios de WhatsApp saem por este webhook do n8n
       # em vez da Evolution da stack (produção deixa vazia)
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+      # Consolidação dos alertas: mensagem única agrupada por flush
+      ALERTA_CRITICO_SEGUNDOS: ${ALERTA_CRITICO_SEGUNDOS:-20}
+      ALERTA_DIGEST_SEGUNDOS: ${ALERTA_DIGEST_SEGUNDOS:-300}
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     depends_on:
