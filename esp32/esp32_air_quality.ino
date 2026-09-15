@@ -39,6 +39,7 @@
 
 #include <WiFi.h>        // Biblioteca nativa para gerenciar a conexão Wi-Fi do ESP32.
 #include <HTTPClient.h>  // Permite criar requisições HTTP (como o POST) para enviar dados à nuvem.
+#include <WiFiClientSecure.h>  // Cliente TLS: obrigatório para POST em URLs https (senão o código de erro é -1).
 #include <WebServer.h>   // Instancia um servidor web interno no ESP32, permitindo acesso local via navegador.
 #include <Preferences.h>  // Memória flash NVS — guarda o provisionamento da sala feito pelo portal (Fase 3).
 #include <time.h>         // NTP — hora real usada na curva de ocupação escolar da simulação (Fase 3).
@@ -91,6 +92,8 @@ int SALA_PERTENCENTE = 1;
 const int   SALA_COMPILADA = 0;      // 0 = nenhum provisionamento embutido
 const char* TOKEN_COMPILADO = "";
 const char* BACKEND_COMPILADO = "";  // ex.: https://sa-backend.univesp.dev
+const char* CF_ID_COMPILADO = "";    // Cloudflare Access (Service Token), se a borda exigir
+const char* CF_SECRET_COMPILADO = "";
 
 /**
  * TOTAL_SALAS:
@@ -420,7 +423,20 @@ bool enviarParaBackend(int salaNumero, const char* json) {
   }
 
   HTTPClient http;
-  http.begin(url);                                    // Configura o destino da requisição
+  WiFiClientSecure clienteTls;  // precisa existir até o fim do POST
+  if (url.startsWith("https://")) {
+    /**
+     * HTTPS: o HTTPClient do ESP32 não negocia TLS sem um cliente seguro —
+     * sem isto, todo POST para https falha com código -1. O setInsecure()
+     * cifra a conexão mas NÃO valida o certificado do servidor: compromisso
+     * consciente do projeto (a autenticidade vem do token do dispositivo e
+     * do Cloudflare Access, quando ativo).
+     */
+    clienteTls.setInsecure();
+    http.begin(clienteTls, url);
+  } else {
+    http.begin(url);                                  // http simples (rede local)
+  }
   http.addHeader("Content-Type", "application/json"); // Informa que o corpo é JSON
   if (cfgToken.length() > 0) {
     // Token do provisionamento: autentica o dispositivo no backend (Fase 4)
@@ -778,6 +794,8 @@ void setup() {
     SALA_PERTENCENTE = SALA_COMPILADA;
     cfgToken = TOKEN_COMPILADO;
     cfgBackendUrl = BACKEND_COMPILADO;
+    cfgCfId = CF_ID_COMPILADO;
+    cfgCfSecret = CF_SECRET_COMPILADO;
     MODO_SIMULACAO = false;
     Serial.printf("[PROV] Provisionamento embutido no firmware: Sala %d\n", SALA_COMPILADA);
   } else {
@@ -1028,15 +1046,20 @@ void loop() {
          * Exemplo: se SALA_PERTENCENTE = 3,
          * envia para https://seu-backend/api/sala3
          */
-        char json[500];
-        snprintf(json, sizeof(json),
-          "{\"temperatura\":%.1f,\"umidade\":%.1f,\"co2\":%d,\"pm1\":%d,\"pm25\":%d,\"pm4\":%d,\"pm10\":%d,\"voc\":%d,\"nox\":%d,\"luz\":%d}",
-          t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
-
-        if (enviarParaBackend(SALA_PERTENCENTE, json)) {
-          reenviarPendentes();        // Fase 4: rede ok — aproveita e esvazia o buffer
+        if (t_co2 == 0 && t_temp == 0.0 && t_umid == 0.0) {
+          // Sensores comentados/não inicializados: zeros não são medição.
+          Serial.println("[SENSORES] Leituras zeradas — sensores não inicializados; envio pulado.");
         } else {
-          guardarPendente(json);      // Fase 4: falhou — guarda para reenviar depois
+          char json[500];
+          snprintf(json, sizeof(json),
+            "{\"temperatura\":%.1f,\"umidade\":%.1f,\"co2\":%d,\"pm1\":%d,\"pm25\":%d,\"pm4\":%d,\"pm10\":%d,\"voc\":%d,\"nox\":%d,\"luz\":%d}",
+            t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
+
+          if (enviarParaBackend(SALA_PERTENCENTE, json)) {
+            reenviarPendentes();      // rede ok — aproveita e esvazia o buffer
+          } else {
+            guardarPendente(json);    // falhou — guarda para reenviar depois
+          }
         }
       }
 

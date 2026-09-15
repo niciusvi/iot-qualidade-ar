@@ -629,6 +629,15 @@ app.get('/api/salas/:id(\\d+)/firmware', exigirPerfil('admin'), async (req, res,
         `const char* BASE_URL = "${urlPublica}/api/sala";`
       );
     }
+    // Cloudflare Access: o firmware embutido também carrega o Service Token,
+    // senão as placas baixadas do portal seriam barradas na borda.
+    const cfId = process.env.CF_ACCESS_CLIENT_ID || '';
+    if (cfId) {
+      custom = custom
+        .replace('const char* CF_ID_COMPILADO = "";', `const char* CF_ID_COMPILADO = "${cfId}";`)
+        .replace('const char* CF_SECRET_COMPILADO = "";',
+          `const char* CF_SECRET_COMPILADO = "${process.env.CF_ACCESS_CLIENT_SECRET || ''}";`);
+    }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="sala-${id}.ino"`);
     res.send(custom);
