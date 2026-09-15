@@ -1,39 +1,30 @@
 /**
+ * ============================================================================
+ * SCHOOL AIR — Firmware do nó de sala (ESP32) · Projeto Integrador VI
+ *
  * MODOS DE OPERAÇÃO:
  *
+ *   MODO PRODUÇÃO (MODO_SIMULACAO = false — padrão do firmware baixado):
+ *     Lê os sensores reais (I2C + analógico) e envia as leituras da SUA sala
+ *     para o backend. A identidade da sala vem do provisionamento: embutido
+ *     pelo portal neste arquivo, ou gravado na flash pela página /config.
+ *
  *   MODO SIMULAÇÃO (MODO_SIMULACAO = true):
- *     O ESP32 atua como "Master Simulator" — ignora sensores físicos
- *     e gera dados fictícios para TODAS as 10 salas, enviando 10 POSTs
- *     separados por ciclo. Útil para testar o Dashboard sem hardware.
- *     Neste modo, a variável SALA_PERTENCENTE é ignorada.
+ *     Um único ESP32 vira o "gerador da escola": simula TOTAL_SALAS salas com
+ *     dados realistas (inércia, curva de ocupação escolar, episódios de CO2)
+ *     e envia um POST por sala a cada ciclo. Útil para demonstrações e para
+ *     testar o portal e os alertas sem sensores físicos.
  *
- *   MODO PRODUÇÃO (MODO_SIMULACAO = false):
- *     O ESP32 lê sensores reais (I2C + Analógico) e envia dados para
- *     UMA ÚNICA sala, definida por SALA_PERTENCENTE. Em produção,
- *     cada sala da escola terá seu próprio ESP32 configurado com um
- *     número de sala diferente (1, 2, 3... 10).
+ * ARQUITETURA:
  *
- * ARQUITETURA MULTI-SALA:
+ *   ESP32 (1 por sala) ──POST /api/sala<N>──▶ Backend ──▶ PostgreSQL/portal
+ *     · autenticação: token do dispositivo + TLS (+ Cloudflare Access)
+ *     · páginas locais: /  (diagnóstico) · /config (provisionar / trocar Wi-Fi)
  *
- *   Escola com 10 salas = 10 ESP32 (um por sala)
- *   Cada ESP32 envia dados para /api/salaX (onde X = SALA_PERTENCENTE)
- *   O Dashboard no backend exibe todas as 10 salas simultaneamente
- *
- *   Produção:
- *   ┌─ ESP32 Sala 1  ──POST──▶ /api/sala1
- *   ├─ ESP32 Sala 2  ──POST──▶ /api/sala2
- *   ├─ ESP32 Sala 3  ──POST──▶ /api/sala3
- *   │  ...
- *   └─ ESP32 Sala 10 ──POST──▶ /api/sala10
- *
- *   Simulação (1 único ESP32 faz tudo):
- *   ┌─ ESP32 "Master" ──POST──▶ /api/sala1
- *   │                  ──POST──▶ /api/sala2
- *   │                  ──POST──▶ /api/sala3
- *   │                     ...
- *   │                  ──POST──▶ /api/sala10
- *   └─ (10 POSTs por ciclo)
- *
+ *   As salas são cadastradas no PORTAL, não neste código: criar uma sala lá
+ *   gera este firmware já configurado. Se a placa perder a rede por completo,
+ *   ela cria o Wi-Fi de recuperação "SchoolAir-Sala<N>" com o /config em
+ *   http://192.168.4.1.
  * ============================================================================
  */
 
@@ -58,27 +49,20 @@
 
 /**
  * MODO_SIMULACAO:
- *   true  → Gera dados fictícios para 10 salas (teste sem hardware)
- *   false → Lê sensores reais e envia para UMA sala específica
+ *   true  → gera dados fictícios para TOTAL_SALAS salas (teste sem hardware)
+ *   false → lê sensores reais e envia para UMA sala específica
  *
- * Mude para 'false' quando instalar o ESP32 fisicamente em uma sala da escola.
+ * O firmware baixado pelo portal já vem com false (produção); troque para
+ * true antes de gravar se quiser usar a placa como simulador.
  */
 bool MODO_SIMULACAO = true;
 
 /**
  * SALA_PERTENCENTE:
- * Número da sala onde ESTE ESP32 está instalado (de 1 a 10).
- *
- * ATENÇÃO: Esta variável SÓ é usada no MODO PRODUÇÃO (MODO_SIMULACAO = false).
- * No modo simulação, o ESP32 envia para TODAS as 10 salas automaticamente.
- *
- * COMO CONFIGURAR EM PRODUÇÃO:
- *   - ESP32 da Sala 1: SALA_PERTENCENTE = 1
- *   - ESP32 da Sala 2: SALA_PERTENCENTE = 2
- *   - ESP32 da Sala 3: SALA_PERTENCENTE = 3
- *   - ... e assim por diante até 10
- *
- * Cada ESP32 é gravado com um número diferente antes de ser instalado.
+ * Número da sala deste ESP32 no MODO PRODUÇÃO. Normalmente você NÃO edita
+ * isto à mão: o valor vem do provisionamento — embutido pelo portal no
+ * firmware baixado, ou salvo na flash pela página /config. A edição manual
+ * serve apenas para testes de desenvolvimento.
  */
 int SALA_PERTENCENTE = 1;
 
@@ -97,8 +81,8 @@ const char* CF_SECRET_COMPILADO = "";
 
 /**
  * TOTAL_SALAS:
- * Número total de salas da escola.
- * Usado no modo simulação para saber quantos POSTs enviar por ciclo.
+ * Quantidade de salas geradas pelo MODO SIMULAÇÃO (um POST por sala/ciclo).
+ * As salas reais são cadastradas no portal e não dependem deste número.
  */
 const int TOTAL_SALAS = 10;
 
@@ -191,14 +175,13 @@ bool historicoCheio = false; // Fica 'true' quando o vetor dá a primeira volta 
  * Com 30s de intervalo, a carga cai para ~10%, liberando o processador para o servidor web local.
  *
  * IMPORTANTE NO MODO SIMULAÇÃO:
- * São 10 POSTs por ciclo (um para cada sala). Cada POST leva ~3 segundos (SSL).
- * Total por ciclo: ~30 segundos de processamento.
- * Por isso o intervalo de 30s é o mínimo recomendado no modo simulação.
+ * É um POST por sala simulada a cada ciclo (~3 s de TLS cada), então o ciclo
+ * inteiro consome boa parte dos 30 s — esse intervalo é o mínimo recomendado.
  */
 unsigned long ultimoEnvioBackend = 0;
 unsigned long ultimoSalvoHistorico = 0;
 unsigned long ultimaLeituraSensores = 0;
-const unsigned long INTERVALO_ENVIO = 30000;       // Envio paro backend a cada 30 segundos
+const unsigned long INTERVALO_ENVIO = 30000;       // Envio para o backend a cada 30 segundos
 const unsigned long INTERVALO_HISTORICO = 300000;    // Gravação na RAM a cada 5 minutos
 const unsigned long INTERVALO_LEITURA = 30000;       // Leitura dos sensores a cada 30 segundos
 
@@ -220,7 +203,7 @@ bool enviandoBackend = false;
  * ATUALIZAÇÃO MULTI-SALA:
  * O painel local mostra apenas os dados DESTE ESP32 específico
  * (seja a sala real em produção ou a última sala simulada).
- * Para ver todas as 10 salas, use o Dashboard no backend.
+ * Para ver todas as salas, use o portal School Air.
  */
 const char paginaHTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -231,29 +214,29 @@ const char paginaHTML[] PROGMEM = R"rawliteral(
 <title>ESP32 - Painel Local</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#121212;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;max-width:900px;margin:0 auto;line-height:1.5;}
-h1{color:#7c9ef7;font-size:22px;font-weight:700;margin-bottom:6px;}
-.subtitle{color:#9e9e9e;font-size:13px;margin-bottom:24px;}
+body{background:#0e1116;color:#e2e6ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;max-width:900px;margin:0 auto;line-height:1.5;}
+h1{color:#6b9df8;font-size:22px;font-weight:700;margin-bottom:6px;}
+.subtitle{color:#94a1b3;font-size:13px;margin-bottom:24px;}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
 @media(max-width:600px){.grid{grid-template-columns:1fr;}}
-.card{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:20px;}
-.card h2{font-size:14px;font-weight:600;color:#9e9e9e;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #333;padding-bottom:10px;margin-bottom:14px;}
+.card{background:#151a21;border:1px solid #2a3442;border-radius:8px;padding:20px;}
+.card h2{font-size:14px;font-weight:600;color:#94a1b3;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #2a3442;padding-bottom:10px;margin-bottom:14px;}
 .row{display:flex;justify-content:space-between;padding:5px 0;font-size:14px;}
-.row .label{color:#9e9e9e;} .row .value{font-weight:600;}
-.c-temp{color:#e57373;} .c-umid{color:#81c784;} .c-co2{color:#ffb74d;} .c-luz{color:#7c9ef7;}
+.row .label{color:#94a1b3;} .row .value{font-weight:600;}
+.c-temp{color:#e05c5c;} .c-umid{color:#6ec07a;} .c-co2{color:#e8a33d;} .c-luz{color:#6b9df8;}
 .secondary{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:13px;}
-.secondary span{color:#9e9e9e;} .secondary strong{color:#bdbdbd;}
-.chart-wrap{background:#1e1e1e;border:1px solid #333;border-radius:12px;padding:20px;}
-.chart-wrap h2{font-size:14px;font-weight:600;color:#9e9e9e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:16px;}
+.secondary span{color:#94a1b3;} .secondary strong{color:#b6c0cd;}
+.chart-wrap{background:#151a21;border:1px solid #2a3442;border-radius:8px;padding:20px;}
+.chart-wrap h2{font-size:14px;font-weight:600;color:#94a1b3;text-transform:uppercase;letter-spacing:.05em;margin-bottom:16px;}
 canvas{width:100%!important;height:220px!important;display:block;}
-.legend{display:flex;gap:20px;margin-top:12px;font-size:12px;color:#9e9e9e;}
+.legend{display:flex;gap:20px;margin-top:12px;font-size:12px;color:#94a1b3;}
 .legend-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;}
-.status-bar{margin-top:20px;padding:12px 16px;background:#1e1e1e;border:1px solid #333;border-radius:8px;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#9e9e9e;}
-.ok{color:#81c784;} .err{color:#e57373;}
-.countdown{font-size:11px;color:#666;margin-left:12px;}
-.modo-badge{display:inline-block;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:600;margin-bottom:16px;}
-.modo-sim{background:rgba(255,183,77,0.15);color:#ffb74d;}
-.modo-prod{background:rgba(129,199,132,0.15);color:#81c784;}
+.status-bar{margin-top:20px;padding:12px 16px;background:#151a21;border:1px solid #2a3442;border-radius:6px;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#94a1b3;}
+.ok{color:#6ec07a;} .err{color:#e05c5c;}
+.countdown{font-size:11px;color:#8a93a3;margin-left:12px;}
+.modo-badge{display:inline-block;padding:4px 12px;border-radius:8px;font-size:11px;font-weight:600;margin-bottom:16px;}
+.modo-sim{background:rgba(232,163,61,0.15);color:#e8a33d;}
+.modo-prod{background:rgba(110,192,122,0.15);color:#6ec07a;}
 </style>
 </head>
 <body>
@@ -288,9 +271,9 @@ canvas{width:100%!important;height:220px!important;display:block;}
   <h2>Historico (Ultimas 12h)</h2>
   <canvas id="chart"></canvas>
   <div class="legend">
-    <div><span class="legend-dot" style="background:#e57373;"></span>Temperatura (C)</div>
-    <div><span class="legend-dot" style="background:#81c784;"></span>Umidade (%)</div>
-    <div><span class="legend-dot" style="background:#ffb74d;"></span>CO2 (ppm)</div>
+    <div><span class="legend-dot" style="background:#e05c5c;"></span>Temperatura (C)</div>
+    <div><span class="legend-dot" style="background:#6ec07a;"></span>Umidade (%)</div>
+    <div><span class="legend-dot" style="background:#e8a33d;"></span>CO2 (ppm)</div>
   </div>
 </div>
 
@@ -303,8 +286,8 @@ canvas{width:100%!important;height:220px!important;display:block;}
 var INTERVALO=30000,proximoUpdate=0;
 function formatUptime(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);s%=60;return h+'h '+String(m).padStart(2,'0')+'m '+String(s).padStart(2,'0')+'s';}
 function formatTime(ms){var s=Math.floor(ms/1000),h=Math.floor(s/3600);s%=3600;var m=Math.floor(s/60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
-function drawChart(data){var canvas=document.getElementById('chart'),ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,rect=canvas.getBoundingClientRect();canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;ctx.scale(dpr,dpr);var W=rect.width,H=rect.height,padL=50,padR=55,padT=10,padB=30,plotW=W-padL-padR,plotH=H-padT-padB;ctx.clearRect(0,0,W,H);if(!data||data.length<2){ctx.fillStyle='#666';ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Aguardando historico (minimo 2 pontos)...',W/2,H/2);return;}var temps=data.map(function(d){return d.temp;}),umids=data.map(function(d){return d.umid;}),co2s=data.map(function(d){return d.co2;});var tempMin=Math.min.apply(null,temps)-2,tempMax=Math.max.apply(null,temps)+2,co2Min=Math.min.apply(null,co2s)-50,co2Max=Math.max.apply(null,co2s)+50,umidMin=Math.min.apply(null,umids)-5,umidMax=Math.max.apply(null,umids)+5;if(tempMax-tempMin<1){tempMin-=5;tempMax+=5;}if(co2Max-co2Min<1){co2Min-=100;co2Max+=100;}if(umidMax-umidMin<1){umidMin-=10;umidMax+=10;}function yTemp(v){return padT+plotH*(1-(v-tempMin)/(tempMax-tempMin));}function yUmid(v){return padT+plotH*(1-(v-umidMin)/(umidMax-umidMin));}function yCO2(v){return padT+plotH*(1-(v-co2Min)/(co2Max-co2Min));}function xPos(i){return padL+(i/(data.length-1))*plotW;}ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=1;ctx.setLineDash([4,4]);for(var g=0;g<=4;g++){var gy=padT+(plotH/4)*g;ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+plotW,gy);ctx.stroke();}ctx.setLineDash([]);ctx.fillStyle='#e57373';ctx.font='11px sans-serif';ctx.textAlign='right';for(var g=0;g<=4;g++){var val=tempMin+((tempMax-tempMin)/4)*(4-g),gy=padT+(plotH/4)*g;ctx.fillText(val.toFixed(0)+'C',padL-6,gy+4);}ctx.fillStyle='#ffb74d';ctx.textAlign='left';for(var g=0;g<=4;g++){var val=co2Min+((co2Max-co2Min)/4)*(4-g),gy=padT+(plotH/4)*g;ctx.fillText(val.toFixed(0),padL+plotW+6,gy+4);}ctx.fillStyle='#666';ctx.textAlign='center';ctx.font='10px sans-serif';var step=Math.max(1,Math.floor(data.length/8));for(var i=0;i<data.length;i+=step){ctx.fillText(formatTime(data[i].tempo),xPos(i),H-6);}ctx.fillText(formatTime(data[data.length-1].tempo),xPos(data.length-1),H-6);function drawLine(values,yFn,color){ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.lineJoin='round';for(var i=0;i<values.length;i++){var x=xPos(i),y=yFn(values[i]);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.stroke();if(values.length<=50){ctx.fillStyle=color;for(var i=0;i<values.length;i++){ctx.beginPath();ctx.arc(xPos(i),yFn(values[i]),2.5,0,Math.PI*2);ctx.fill();}}}drawLine(co2s,yCO2,'#ffb74d');drawLine(umids,yUmid,'#81c784');drawLine(temps,yTemp,'#e57373');}
-function update(){var controller=new AbortController();var timeout=setTimeout(function(){controller.abort();},5000);fetch('/api',{signal:controller.signal}).then(function(r){clearTimeout(timeout);return r.json();}).then(function(d){document.getElementById('sys-ip').textContent=d.sistema.ip;document.getElementById('sys-chip').textContent=d.sistema.chip;document.getElementById('sys-ram').textContent=(d.sistema.ramLivre/1024).toFixed(1)+' KB';document.getElementById('sys-uptime').textContent=formatUptime(d.sistema.uptime);document.getElementById('sys-sala').textContent=d.sistema.sala;var badge=document.getElementById('modo-badge');if(d.sistema.simulacao){badge.className='modo-badge modo-sim';badge.textContent='Modo: Simulacao (10 salas)';}else{badge.className='modo-badge modo-prod';badge.textContent='Modo: Producao (Sala '+d.sistema.sala+')';}document.getElementById('val-temp').textContent=d.atual.temperatura.toFixed(1)+' C';document.getElementById('val-umid').textContent=d.atual.umidade.toFixed(1)+' %';document.getElementById('val-co2').textContent=d.atual.co2+' ppm';document.getElementById('val-luz').textContent=d.atual.luz+' lx';document.getElementById('val-voc').textContent=d.atual.voc;document.getElementById('val-nox').textContent=d.atual.nox;document.getElementById('val-pm25').textContent=d.atual.pm25;drawChart(d.historico);var now=new Date();var ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');document.getElementById('status-msg').className='ok';document.getElementById('status-msg').textContent='Conectado';document.getElementById('status-time').textContent='Atualizado: '+ts;proximoUpdate=INTERVALO/1000;}).catch(function(e){document.getElementById('status-msg').className='err';document.getElementById('status-msg').textContent='Falha: '+(e.name==='AbortError'?'ESP32 ocupado (SSL)':e.message);proximoUpdate=INTERVALO/1000;});}
+function drawChart(data){var canvas=document.getElementById('chart'),ctx=canvas.getContext('2d'),dpr=window.devicePixelRatio||1,rect=canvas.getBoundingClientRect();canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;ctx.scale(dpr,dpr);var W=rect.width,H=rect.height,padL=50,padR=55,padT=10,padB=30,plotW=W-padL-padR,plotH=H-padT-padB;ctx.clearRect(0,0,W,H);if(!data||data.length<2){ctx.fillStyle='#8a93a3';ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('Aguardando historico (minimo 2 pontos)...',W/2,H/2);return;}var temps=data.map(function(d){return d.temp;}),umids=data.map(function(d){return d.umid;}),co2s=data.map(function(d){return d.co2;});var tempMin=Math.min.apply(null,temps)-2,tempMax=Math.max.apply(null,temps)+2,co2Min=Math.min.apply(null,co2s)-50,co2Max=Math.max.apply(null,co2s)+50,umidMin=Math.min.apply(null,umids)-5,umidMax=Math.max.apply(null,umids)+5;if(tempMax-tempMin<1){tempMin-=5;tempMax+=5;}if(co2Max-co2Min<1){co2Min-=100;co2Max+=100;}if(umidMax-umidMin<1){umidMin-=10;umidMax+=10;}function yTemp(v){return padT+plotH*(1-(v-tempMin)/(tempMax-tempMin));}function yUmid(v){return padT+plotH*(1-(v-umidMin)/(umidMax-umidMin));}function yCO2(v){return padT+plotH*(1-(v-co2Min)/(co2Max-co2Min));}function xPos(i){return padL+(i/(data.length-1))*plotW;}ctx.strokeStyle='rgba(138,147,163,0.18)';ctx.lineWidth=1;ctx.setLineDash([4,4]);for(var g=0;g<=4;g++){var gy=padT+(plotH/4)*g;ctx.beginPath();ctx.moveTo(padL,gy);ctx.lineTo(padL+plotW,gy);ctx.stroke();}ctx.setLineDash([]);ctx.fillStyle='#e05c5c';ctx.font='11px sans-serif';ctx.textAlign='right';for(var g=0;g<=4;g++){var val=tempMin+((tempMax-tempMin)/4)*(4-g),gy=padT+(plotH/4)*g;ctx.fillText(val.toFixed(0)+'C',padL-6,gy+4);}ctx.fillStyle='#e8a33d';ctx.textAlign='left';for(var g=0;g<=4;g++){var val=co2Min+((co2Max-co2Min)/4)*(4-g),gy=padT+(plotH/4)*g;ctx.fillText(val.toFixed(0),padL+plotW+6,gy+4);}ctx.fillStyle='#8a93a3';ctx.textAlign='center';ctx.font='10px sans-serif';var step=Math.max(1,Math.floor(data.length/8));for(var i=0;i<data.length;i+=step){ctx.fillText(formatTime(data[i].tempo),xPos(i),H-6);}ctx.fillText(formatTime(data[data.length-1].tempo),xPos(data.length-1),H-6);function drawLine(values,yFn,color){ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.lineJoin='round';for(var i=0;i<values.length;i++){var x=xPos(i),y=yFn(values[i]);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.stroke();if(values.length<=50){ctx.fillStyle=color;for(var i=0;i<values.length;i++){ctx.beginPath();ctx.arc(xPos(i),yFn(values[i]),2.5,0,Math.PI*2);ctx.fill();}}}drawLine(co2s,yCO2,'#e8a33d');drawLine(umids,yUmid,'#6ec07a');drawLine(temps,yTemp,'#e05c5c');}
+function update(){var controller=new AbortController();var timeout=setTimeout(function(){controller.abort();},5000);fetch('/api',{signal:controller.signal}).then(function(r){clearTimeout(timeout);return r.json();}).then(function(d){document.getElementById('sys-ip').textContent=d.sistema.ip;document.getElementById('sys-chip').textContent=d.sistema.chip;document.getElementById('sys-ram').textContent=(d.sistema.ramLivre/1024).toFixed(1)+' KB';document.getElementById('sys-uptime').textContent=formatUptime(d.sistema.uptime);document.getElementById('sys-sala').textContent=d.sistema.sala;var badge=document.getElementById('modo-badge');if(d.sistema.simulacao){badge.className='modo-badge modo-sim';badge.textContent='Modo: Simulacao';}else{badge.className='modo-badge modo-prod';badge.textContent='Modo: Producao (Sala '+d.sistema.sala+')';}document.getElementById('val-temp').textContent=d.atual.temperatura.toFixed(1)+' C';document.getElementById('val-umid').textContent=d.atual.umidade.toFixed(1)+' %';document.getElementById('val-co2').textContent=d.atual.co2+' ppm';document.getElementById('val-luz').textContent=d.atual.luz+' lx';document.getElementById('val-voc').textContent=d.atual.voc;document.getElementById('val-nox').textContent=d.atual.nox;document.getElementById('val-pm25').textContent=d.atual.pm25;drawChart(d.historico);var now=new Date();var ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');document.getElementById('status-msg').className='ok';document.getElementById('status-msg').textContent='Conectado';document.getElementById('status-time').textContent='Atualizado: '+ts;proximoUpdate=INTERVALO/1000;}).catch(function(e){document.getElementById('status-msg').className='err';document.getElementById('status-msg').textContent='Falha: '+(e.name==='AbortError'?'ESP32 ocupado (SSL)':e.message);proximoUpdate=INTERVALO/1000;});}
 setInterval(function(){if(proximoUpdate>0){proximoUpdate--;document.getElementById('countdown').textContent=' (proximo em '+proximoUpdate+'s)';}},1000);
 update();setInterval(update,INTERVALO);
 window.addEventListener('resize',function(){update();});
@@ -405,7 +388,7 @@ void handleApiLocal() {
  *   salaNumero = 3
  *   URL final = "https://sa-backend.univesp.dev/api/sala3"
  *
- * @param salaNumero — Número da sala (1 a 10)
+ * @param salaNumero — Número da sala de destino
  * @param json       — String JSON com os dados dos sensores
  * ============================================================================
  */
@@ -448,7 +431,7 @@ bool enviarParaBackend(int salaNumero, const char* json) {
     http.addHeader("CF-Access-Client-Id", cfgCfId);
     http.addHeader("CF-Access-Client-Secret", cfgCfSecret);
   }
-  http.setTimeout(8000);                              // Timeout de 8s (evita travar se backend lenta)
+  http.setTimeout(8000);                              // Timeout de 8s (evita travar se o backend estiver lento)
 
   int code = http.POST(json);                         // Dispara o POST e recebe o código HTTP
 
@@ -526,23 +509,6 @@ void reenviarPendentes() {
 }
 
 
-/**
- * ============================================================================
- * FUNÇÃO AUXILIAR: gerarDadosSimulados(salaNumero)
- *
- * PROPÓSITO:
- * Gera dados fictícios DIFERENTES para cada sala, criando um cenário
- * realista de monitoramento para testes do Dashboard.
- *
- * COMO GERA DADOS DIFERENTES POR SALA:
- * Usa o número da sala como "offset" (deslocamento) nos valores base.
- * Sala 1: temp base ~22°C, Sala 5: temp base ~26°C, Sala 10: temp base ~31°C
- * Isso faz com que algumas salas fiquem "Excelente", outras "Atenção"
- * e outras "Crítico" — perfeito para testar as cores do Dashboard.
- *
- * @param salaNumero — Número da sala (1 a 10), usado como offset
- * ============================================================================
- */
 /**
  * ============================================================================
  * SIMULAÇÃO REALISTA (v2 — Fase 3)
@@ -680,20 +646,20 @@ void handleConfigForm() {
     "<!DOCTYPE html><html lang='pt-BR'><head><meta charset='UTF-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
     "<title>ESP32 - Provisionamento</title>"
-    "<style>body{background:#121212;color:#e0e0e0;font-family:sans-serif;padding:24px;max-width:640px;margin:0 auto;}"
-    "h1{color:#7c9ef7;font-size:20px;margin-bottom:8px;}p{color:#9e9e9e;font-size:13px;margin-bottom:16px;}"
-    "textarea{width:100%;height:180px;background:#1e1e1e;color:#e0e0e0;border:1px solid #333;border-radius:8px;padding:12px;font-family:monospace;font-size:12px;}"
-    "button{margin-top:12px;padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;}"
-    ".salvar{background:#7c9ef7;color:#121212;}.reset{background:#e57373;color:#121212;margin-left:8px;}"
-    ".status{margin-top:16px;padding:12px;background:#1e1e1e;border:1px solid #333;border-radius:8px;font-size:13px;}</style></head><body>"
+    "<style>body{background:#0e1116;color:#e2e6ec;font-family:sans-serif;padding:24px;max-width:640px;margin:0 auto;}"
+    "h1{color:#6b9df8;font-size:20px;margin-bottom:8px;}p{color:#94a1b3;font-size:13px;margin-bottom:16px;}"
+    "textarea{width:100%;height:180px;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;}"
+    "button{margin-top:12px;padding:10px 20px;border:none;border-radius:6px;font-weight:600;cursor:pointer;}"
+    ".salvar{background:rgba(107,157,248,0.18);color:#6b9df8;}.reset{background:rgba(224,92,92,0.15);color:#e05c5c;margin-left:8px;}"
+    ".status{margin-top:16px;padding:12px;background:#151a21;border:1px solid #2a3442;border-radius:6px;font-size:13px;}</style></head><body>"
     "<h1>Provisionamento da Sala</h1>"
     "<p>Cole abaixo o conteúdo do arquivo <b>sala-&lt;id&gt;.json</b> baixado do portal (aba Configurações).</p>"
     "<form method='POST' action='/config'>"
     "<p style='margin-bottom:6px'>Provisionamento da sala (opcional se só for trocar a rede):</p>"
     "<textarea name='cfg' placeholder='{ conteudo do arquivo sala-N.json }'></textarea>"
     "<p style='margin:14px 0 6px'>Trocar a rede Wi-Fi (opcional — em branco mantém a atual):</p>"
-    "<input name='wifi_ssid' placeholder='Nome da rede (SSID)' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:8px;padding:10px;margin-bottom:8px;'>"
-    "<input name='wifi_senha' type='password' placeholder='Senha da rede' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:8px;padding:10px;'>"
+    "<input name='wifi_ssid' placeholder='Nome da rede (SSID)' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:6px;padding:10px;margin-bottom:8px;'>"
+    "<input name='wifi_senha' type='password' placeholder='Senha da rede' style='width:100%;background:#151a21;color:#e2e6ec;border:1px solid #2a3442;border-radius:6px;padding:10px;'>"
     "<br><button class='salvar' type='submit'>Salvar e reiniciar</button></form>"
     "<form method='POST' action='/config/reset' style='display:inline'>"
     "<button class='reset' type='submit'>Limpar provisionamento</button></form>"
@@ -807,10 +773,10 @@ void setup() {
 
   /**
    * Exibe as configurações atuais no Serial Monitor para diagnóstico.
-   * Isso é especialmente útil quando se tem 10 ESP32 e precisa saber
-   * rapidamente qual sala cada um está atendendo.
+   * Isso é útil quando há vários ESP32 e é preciso saber rapidamente
+   * qual sala cada um está atendendo.
    */
-  Serial.printf("Modo: %s\n", MODO_SIMULACAO ? "SIMULAÇÃO (10 salas)" : "PRODUÇÃO (sala única)");
+  Serial.printf("Modo: %s\n", MODO_SIMULACAO ? "SIMULAÇÃO" : "PRODUÇÃO (sala única)");
   if (!MODO_SIMULACAO) {
     Serial.printf("Sala pertencente: %d\n", SALA_PERTENCENTE);
   }
@@ -900,7 +866,7 @@ void setup() {
     scd4x.startPeriodicMeasurement();
     */
   } else {
-    Serial.println("Modo Simulação: Geração de dados para 10 salas ativada.");
+    Serial.println("Modo Simulação: geração de dados simulados ativada.");
   }
 
   // Preenche a posição 0 do buffer do histórico para que a página local já inicie com 1 ponto no gráfico
@@ -908,7 +874,7 @@ void setup() {
   indiceHistorico++;
   Serial.println("Histórico local inicializado.");
 
-  Serial.printf("Intervalos: Leitura=%lus | backend=%lus | Historico=%lus\n",
+  Serial.printf("Intervalos: Leitura=%lus | Envio=%lus | Historico=%lus\n",
     INTERVALO_LEITURA / 1000, INTERVALO_ENVIO / 1000, INTERVALO_HISTORICO / 1000);
   Serial.println("--- SISTEMA PRONTO ---\n");
 }
@@ -922,7 +888,7 @@ void setup() {
  *
  *   1. server.handleClient() — Mantém o painel web local funcionando
  *   2. TAREFA 1 — Leitura dos sensores (a cada 30s)
- *   3. TAREFA 2 — Envio paro backend (a cada 30s)
+ *   3. TAREFA 2 — Envio para o backend (a cada 30s)
  *      - Simulação: loop de 1 a 10, gera dados + POST para cada sala
  *      - Produção: lê sensores reais + POST apenas para SALA_PERTENCENTE
  *   4. TAREFA 3 — Salvar no histórico local (a cada 5 minutos)
@@ -970,11 +936,11 @@ void loop() {
   // TAREFA 2: Enviar para Nuvem (backend) a cada 30 segundos
   //
   // MODO SIMULAÇÃO (Master Simulator):
-  //   O ESP32 faz um loop de 1 a 10, gerando dados fictícios diferentes
-  //   para cada sala e enviando 10 POSTs separados.
-  //   Isso permite testar o Dashboard inteiro com um único ESP32.
+  //   O ESP32 percorre as salas simuladas gerando dados diferentes
+  //   para cada uma e enviando um POST por sala.
+  //   Isso permite testar o portal inteiro com um único ESP32.
   //
-  //   ATENÇÃO: 10 POSTs com SSL = ~30 segundos de processamento.
+  //   ATENÇÃO: um POST com TLS por sala (~3 s cada) — o ciclo é longo.
   //   Durante esse tempo, o painel web local fica lento.
   //   Isso é esperado e aceitável em modo de teste.
   //
@@ -994,7 +960,7 @@ void loop() {
          * MODO SIMULAÇÃO — 10 SALAS
          * =============================
          *
-         * Loop de sala 1 até sala 10:
+         * Loop por todas as salas simuladas:
          * Para cada sala:
          *   1. Gera dados simulados usando a função gerarDadosSimulados()
          *      (que usa o número da sala como offset para variar os valores)
@@ -1006,7 +972,7 @@ void loop() {
          * Sem ele, o ESP32 ficaria 30+ segundos sem alimentar o watchdog,
          * causando um reboot automático (WDT reset).
          */
-        Serial.println("\n--- SIMULAÇÃO: Enviando dados para 10 salas ---");
+        Serial.println("\n--- SIMULAÇÃO: enviando dados das salas simuladas ---");
 
         for (int sala = 1; sala <= TOTAL_SALAS; sala++) {
           // 1. Gera dados fictícios específicos para esta sala
@@ -1029,13 +995,13 @@ void loop() {
           /**
            * Processa requests web pendentes entre cada POST.
            * Sem isso, se alguém acessar o painel local durante o envio
-           * das 10 salas, a requisição ficaria travada por ~30 segundos.
+           * das salas simuladas, a requisição ficaria travada por ~30 segundos.
            * Com esta linha, o servidor responde nos intervalos entre POSTs.
            */
           server.handleClient();
         }
 
-        Serial.println("--- SIMULAÇÃO: Todos os 10 envios concluídos ---\n");
+        Serial.println("--- SIMULAÇÃO: envios do ciclo concluídos ---\n");
 
       } else {
         /**
