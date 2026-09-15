@@ -451,7 +451,7 @@ bool enviarParaBackend(int salaNumero, const char* json) {
      * que sai com o placeholder e não resolve DNS.
      */
     Serial.printf("  ERRO de conexao com %s (%s)\n",
-      url.c_str(), HTTPClient::errorToString(code).c_str());
+      url.c_str(), http.errorToString(code).c_str());
   }
 
   http.end(); // Libera recursos de rede do microcontrolador
