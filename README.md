@@ -706,6 +706,13 @@ próprio Cloudflare, antes de tocar o servidor. Máquinas (os ESP32) passam com 
    credenciais, o ESP32 as guarda na flash e envia os headers
    `CF-Access-Client-Id` / `CF-Access-Client-Secret` em cada requisição.
 
+O portal **não** é afetado pelo Access: o navegador só fala com o host do
+frontend, e o nginx da stack repassa o `/api` para o backend por dentro da rede
+do Docker — a borda protegida fica exclusiva para a frota de ESP32. De quebra,
+o nginx devolve **403** para `POST /api/sala<N>` no host público: leitura de
+sensor só entra pela borda com Service Token, o que impede dado forjado por
+quem não tem a credencial.
+
 O **mesmo token serve para toda a frota** de ESP32 (a identidade individual de cada
 dispositivo continua sendo o `X-Device-Token` da sala); revogar o token no painel
 do Cloudflare corta todos de uma vez. Dispositivos já provisionados antes do Access
