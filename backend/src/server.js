@@ -616,11 +616,19 @@ app.get('/api/salas/:id(\\d+)/firmware', exigirPerfil('admin'), async (req, res,
       await pool.query('UPDATE salas SET token = $2 WHERE id = $1', [id, token]);
     }
     const fonte = await readFile(new URL('../esp32/esp32_air_quality.ino', import.meta.url), 'utf8');
-    const custom = fonte
+    const urlPublica = process.env.PUBLIC_BACKEND_URL || '';
+    let custom = fonte
       .replace('const int   SALA_COMPILADA = 0;', `const int   SALA_COMPILADA = ${id};`)
       .replace('const char* TOKEN_COMPILADO = "";', `const char* TOKEN_COMPILADO = "${token}";`)
       .replace('const char* BACKEND_COMPILADO = "";',
-        `const char* BACKEND_COMPILADO = "${process.env.PUBLIC_BACKEND_URL || ''}";`);
+        `const char* BACKEND_COMPILADO = "${urlPublica}";`);
+    if (urlPublica) {
+      // Também preenche o BASE_URL de fallback: nenhum placeholder sobra no arquivo
+      custom = custom.replace(
+        'const char* BASE_URL = "https://SEU-BACKEND-PUBLICO/api/sala";',
+        `const char* BASE_URL = "${urlPublica}/api/sala";`
+      );
+    }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="sala-${id}.ino"`);
     res.send(custom);

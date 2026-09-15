@@ -17,7 +17,7 @@
  *
  *   Escola com 10 salas = 10 ESP32 (um por sala)
  *   Cada ESP32 envia dados para /api/salaX (onde X = SALA_PERTENCENTE)
- *   O Dashboard na Vercel exibe todas as 10 salas simultaneamente
+ *   O Dashboard no backend exibe todas as 10 salas simultaneamente
  *
  *   Produção:
  *   ┌─ ESP32 Sala 1  ──POST──▶ /api/sala1
@@ -118,11 +118,13 @@ const char* password = "xxxxxx";
 
 /**
  * BASE_URL:
- * URL base do servidor Vercel. Os endpoints individuais de cada sala
- * serão construídos concatenando "/api/sala" + número da sala.
- *
+ * URL base do backend (o endpoint de cada sala é BASE_URL + número).
+ * Ela só é usada no modo simulação ou quando não há provisionamento:
+ * num firmware baixado pelo portal, o endereço real já vem preenchido
+ * aqui e em BACKEND_COMPILADO; e o provisionado via /config usa a URL
+ * salva na flash. Ex.: "https://sa-backend.univesp.dev/api/sala"
  */
-const char* BASE_URL = "https://XXXXXX.vercel.app/api/sala";
+const char* BASE_URL = "https://SEU-BACKEND-PUBLICO/api/sala";
 
 // Mapeamento dos Pinos do ESP32 utilizados pelos sensores
 const int PINO_I2C_SDA = 21; // Pino de dados do barramento I2C
@@ -181,7 +183,7 @@ bool historicoCheio = false; // Fica 'true' quando o vetor dá a primeira volta 
  * Em vez de usar delay() - que paralisa o processador e derruba o servidor web local -
  * usamos millis() (tempo desde que a placa ligou) para checar se já está na hora de rodar a tarefa.
  *
- * INTERVALO_VERCEL = 30 segundos:
+ * INTERVALO_ENVIO = 30 segundos:
  * O handshake TLS/SSL consome ~3 segundos de CPU a cada envio.
  * Com 30s de intervalo, a carga cai para ~10%, liberando o processador para o servidor web local.
  *
@@ -190,18 +192,18 @@ bool historicoCheio = false; // Fica 'true' quando o vetor dá a primeira volta 
  * Total por ciclo: ~30 segundos de processamento.
  * Por isso o intervalo de 30s é o mínimo recomendado no modo simulação.
  */
-unsigned long ultimoEnvioVercel = 0;
+unsigned long ultimoEnvioBackend = 0;
 unsigned long ultimoSalvoHistorico = 0;
 unsigned long ultimaLeituraSensores = 0;
-const unsigned long INTERVALO_VERCEL = 30000;       // Envio para Vercel a cada 30 segundos
+const unsigned long INTERVALO_ENVIO = 30000;       // Envio paro backend a cada 30 segundos
 const unsigned long INTERVALO_HISTORICO = 300000;    // Gravação na RAM a cada 5 minutos
 const unsigned long INTERVALO_LEITURA = 30000;       // Leitura dos sensores a cada 30 segundos
 
 /**
- * FLAG DE CONTROLE: Indica se o ESP32 está no meio de um POST para a Vercel.
+ * FLAG DE CONTROLE: Indica se o ESP32 está no meio de um POST para o backend.
  * Usado para dar feedback visual no painel local.
  */
-bool enviandoVercel = false;
+bool enviandoBackend = false;
 
 
 /**
@@ -215,7 +217,7 @@ bool enviandoVercel = false;
  * ATUALIZAÇÃO MULTI-SALA:
  * O painel local mostra apenas os dados DESTE ESP32 específico
  * (seja a sala real em produção ou a última sala simulada).
- * Para ver todas as 10 salas, use o Dashboard na Vercel.
+ * Para ver todas as 10 salas, use o Dashboard no backend.
  */
 const char paginaHTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -388,26 +390,26 @@ void handleApiLocal() {
 
 /**
  * ============================================================================
- * FUNÇÃO AUXILIAR: enviarParaVercel(salaNumero, json)
+ * FUNÇÃO AUXILIAR: enviarParaBackend(salaNumero, json)
  *
  * PROPÓSITO:
- * Encapsula a lógica de envio HTTP POST para a Vercel em uma função reutilizável.
+ * Encapsula a lógica de envio HTTP POST para o backend em uma função reutilizável.
  * Tanto o modo simulação quanto o modo produção chamam esta mesma função,
  * passando o número da sala e o JSON formatado.
  *
  * COMO A URL É CONSTRUÍDA:
- *   BASE_URL = "https://iot-qualidade-ar.vercel.app/api/sala"
+ *   BASE_URL = "https://sa-backend.univesp.dev/api/sala"
  *   salaNumero = 3
- *   URL final = "https://iot-qualidade-ar.vercel.app/api/sala3"
+ *   URL final = "https://sa-backend.univesp.dev/api/sala3"
  *
  * @param salaNumero — Número da sala (1 a 10)
  * @param json       — String JSON com os dados dos sensores
  * ============================================================================
  */
-bool enviarParaVercel(int salaNumero, const char* json) {
+bool enviarParaBackend(int salaNumero, const char* json) {
   /**
    * Monta a URL completa concatenando a BASE_URL com o número da sala.
-   * Exemplo: "https://...vercel.app/api/sala" + "3" = ".../api/sala3"
+   * Exemplo: "https://seu-backend/api/sala" + "3" = ".../api/sala3"
    */
   String url;
   if (cfgBackendUrl.length() > 0) {
@@ -430,7 +432,7 @@ bool enviarParaVercel(int salaNumero, const char* json) {
     http.addHeader("CF-Access-Client-Id", cfgCfId);
     http.addHeader("CF-Access-Client-Secret", cfgCfSecret);
   }
-  http.setTimeout(8000);                              // Timeout de 8s (evita travar se Vercel lenta)
+  http.setTimeout(8000);                              // Timeout de 8s (evita travar se backend lenta)
 
   int code = http.POST(json);                         // Dispara o POST e recebe o código HTTP
 
@@ -495,7 +497,7 @@ void reenviarPendentes() {
     if (len > 0 && len < sizeof(json) - 24 && json[len - 1] == '}') {
       snprintf(json + len - 1, sizeof(json) - len + 1, ",\"idade_s\":%lu}", idade);
     }
-    if (!enviarParaVercel(SALA_PERTENCENTE, json)) break;  // rede caiu de novo: para
+    if (!enviarParaBackend(SALA_PERTENCENTE, json)) break;  // rede caiu de novo: para
     for (int i = 1; i < qtdPendentes; i++) pendentes[i - 1] = pendentes[i];
     qtdPendentes--;
     enviados++;
@@ -885,8 +887,8 @@ void setup() {
   indiceHistorico++;
   Serial.println("Histórico local inicializado.");
 
-  Serial.printf("Intervalos: Leitura=%lus | Vercel=%lus | Historico=%lus\n",
-    INTERVALO_LEITURA / 1000, INTERVALO_VERCEL / 1000, INTERVALO_HISTORICO / 1000);
+  Serial.printf("Intervalos: Leitura=%lus | backend=%lus | Historico=%lus\n",
+    INTERVALO_LEITURA / 1000, INTERVALO_ENVIO / 1000, INTERVALO_HISTORICO / 1000);
   Serial.println("--- SISTEMA PRONTO ---\n");
 }
 
@@ -899,7 +901,7 @@ void setup() {
  *
  *   1. server.handleClient() — Mantém o painel web local funcionando
  *   2. TAREFA 1 — Leitura dos sensores (a cada 30s)
- *   3. TAREFA 2 — Envio para Vercel (a cada 30s)
+ *   3. TAREFA 2 — Envio paro backend (a cada 30s)
  *      - Simulação: loop de 1 a 10, gera dados + POST para cada sala
  *      - Produção: lê sensores reais + POST apenas para SALA_PERTENCENTE
  *   4. TAREFA 3 — Salvar no histórico local (a cada 5 minutos)
@@ -919,7 +921,7 @@ void loop() {
   // porque cada sala precisa de dados diferentes.
   //
   // No modo PRODUÇÃO, lemos os sensores aqui para que os dados estejam
-  // disponíveis tanto para o envio à Vercel quanto para o painel local.
+  // disponíveis tanto para o envio ao backend quanto para o painel local.
   // --------------------------------------------------------------------------
   if (!MODO_SIMULACAO && (agora - ultimaLeituraSensores >= INTERVALO_LEITURA)) {
     ultimaLeituraSensores = agora;
@@ -944,7 +946,7 @@ void loop() {
 
 
   // --------------------------------------------------------------------------
-  // TAREFA 2: Enviar para Nuvem (Vercel) a cada 30 segundos
+  // TAREFA 2: Enviar para Nuvem (backend) a cada 30 segundos
   //
   // MODO SIMULAÇÃO (Master Simulator):
   //   O ESP32 faz um loop de 1 a 10, gerando dados fictícios diferentes
@@ -959,11 +961,11 @@ void loop() {
   //   O ESP32 envia apenas UM POST para a sala definida em SALA_PERTENCENTE.
   //   Leva apenas ~3 segundos. O painel local fica responsivo.
   // --------------------------------------------------------------------------
-  if (agora - ultimoEnvioVercel >= INTERVALO_VERCEL) {
-    ultimoEnvioVercel = agora;
+  if (agora - ultimoEnvioBackend >= INTERVALO_ENVIO) {
+    ultimoEnvioBackend = agora;
 
     if (WiFi.status() == WL_CONNECTED) {
-      enviandoVercel = true;
+      enviandoBackend = true;
 
       if (MODO_SIMULACAO) {
         /**
@@ -996,7 +998,7 @@ void loop() {
             t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
 
           // 3. Envia para o endpoint da sala correspondente
-          enviarParaVercel(sala, json);
+          enviarParaBackend(sala, json);
 
           // 4. Cede processamento ao RTOS entre cada POST
           //    Isso permite que o watchdog seja alimentado e que
@@ -1024,21 +1026,21 @@ void loop() {
          * e envia APENAS para a sala definida em SALA_PERTENCENTE.
          *
          * Exemplo: se SALA_PERTENCENTE = 3,
-         * envia para https://...vercel.app/api/sala3
+         * envia para https://seu-backend/api/sala3
          */
         char json[500];
         snprintf(json, sizeof(json),
           "{\"temperatura\":%.1f,\"umidade\":%.1f,\"co2\":%d,\"pm1\":%d,\"pm25\":%d,\"pm4\":%d,\"pm10\":%d,\"voc\":%d,\"nox\":%d,\"luz\":%d}",
           t_temp, t_umid, t_co2, t_pm1, t_pm25, t_pm4, t_pm10, t_voc, t_nox, t_luz);
 
-        if (enviarParaVercel(SALA_PERTENCENTE, json)) {
+        if (enviarParaBackend(SALA_PERTENCENTE, json)) {
           reenviarPendentes();        // Fase 4: rede ok — aproveita e esvazia o buffer
         } else {
           guardarPendente(json);      // Fase 4: falhou — guarda para reenviar depois
         }
       }
 
-      enviandoVercel = false;
+      enviandoBackend = false;
 
     } else {
       Serial.println("Erro: Wi-Fi desconectado, não foi possível enviar.");
