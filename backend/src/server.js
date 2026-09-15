@@ -23,7 +23,7 @@ import { pool, initDb, RETENCAO_DIAS } from './db.js';
 import { avaliarAlertas } from './alertas.js';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { login, exigirPerfil, seedAdmin, hashSenha } from './auth.js';
+import { login, exigirPerfil, seedAdmin, hashSenha, trocarSenhaPropria } from './auth.js';
 import { jobRelatorioSemanal, montarRelatorioSemanal, estatisticasPeriodo } from './relatorio.js';
 import { enviarWhatsApp, enviarTextoPara } from './alertas.js';
 
@@ -381,6 +381,23 @@ app.post('/api/auth/recuperar', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * PUT /api/auth/senha — o próprio usuário troca a senha (qualquer perfil),
+ * comprovando a senha atual. Nunca revela mais do que "senha atual incorreta".
+ */
+app.put('/api/auth/senha', exigirPerfil('visualizacao'), async (req, res, next) => {
+  try {
+    const { senha_atual, senha_nova } = req.body || {};
+    if (!senha_nova || String(senha_nova).length < 6) {
+      return res.status(400).json({ erro: 'A nova senha precisa de pelo menos 6 caracteres' });
+    }
+    const ok = await trocarSenhaPropria(req.usuario.sub, senha_atual, String(senha_nova));
+    if (!ok) return res.status(401).json({ erro: 'Senha atual incorreta' });
+    console.log(`[auth] Usuário "${req.usuario.usuario}" trocou a própria senha.`);
+    res.json({ status: 'ok' });
+  } catch (err) { next(err); }
+});
+
 /* ============================================================================
  * USUÁRIOS DO PORTAL (Fase 3 — somente admin)
  * ==========================================================================*/
@@ -398,6 +415,9 @@ app.post('/api/usuarios', exigirPerfil('admin'), async (req, res, next) => {
     const { nome, usuario, senha, perfil } = req.body || {};
     if (!nome || !usuario || !senha) {
       return res.status(400).json({ erro: 'nome, usuario e senha são obrigatórios' });
+    }
+    if (String(senha).length < 6) {
+      return res.status(400).json({ erro: 'A senha precisa de pelo menos 6 caracteres' });
     }
     if (!['visualizacao', 'analise', 'admin'].includes(perfil)) {
       return res.status(400).json({ erro: 'perfil deve ser visualizacao, analise ou admin' });
@@ -433,6 +453,9 @@ app.put('/api/usuarios/:id(\\d+)', exigirPerfil('admin'), async (req, res, next)
       valores.push(req.body.ativo); campos.push(`ativo = $${valores.length}`);
     }
     if (req.body?.senha) {
+      if (String(req.body.senha).length < 6) {
+        return res.status(400).json({ erro: 'A senha precisa de pelo menos 6 caracteres' });
+      }
       valores.push(hashSenha(req.body.senha)); campos.push(`senha_hash = $${valores.length}`);
     }
     if (typeof req.body?.telefone === 'string') {

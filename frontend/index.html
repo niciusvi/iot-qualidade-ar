@@ -53,6 +53,7 @@
        do ESP32), destinatários WhatsApp e usuários do portal.
     =========================================================== */
     async function carregarConfig() {
+      if (!AUTH || AUTH.perfil !== 'admin') return;   // não-admin só vê "Minha conta"
       try {
         const [salas, dest, users] = await Promise.all([
           authFetch('/api/salas').then(r => r.json()),
@@ -168,7 +169,7 @@
               onchange="alterarTelefoneUsuario(${u.id}, this.value)" title="Número ou grupo p/ recuperação de senha"
               class="bg-surface border border-border rounded px-2 py-1 text-xs text-text" style="width:145px;"></td>
         <td>${chipAtivo(u.ativo)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini(u.ativo ? 'desativar' : 'reativar', '107,157,248', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '224,92,92', `removerUsuario(${u.id}, '${u.usuario}')`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini('senha', '107,157,248', `abrirTrocaSenha(${u.id}, '${u.usuario}')`)}${btnMini(u.ativo ? 'desativar' : 'reativar', '107,157,248', `alternarUsuario(${u.id}, ${!u.ativo})`)}${btnMini('remover', '224,92,92', `removerUsuario(${u.id}, '${u.usuario}')`)}</div></td>
       </tr>`).join('');
     }
 
@@ -218,6 +219,53 @@
       });
       if (!r.ok) alert((await r.json()).erro || 'Falha');
       carregarConfig();
+    }
+
+    /** Troca da PRÓPRIA senha (qualquer perfil): exige a senha atual. */
+    async function trocarMinhaSenha() {
+      const msg = document.getElementById('conta-senha-msg');
+      const atual = document.getElementById('conta-senha-atual').value;
+      const nova = document.getElementById('conta-senha-nova').value;
+      const confirma = document.getElementById('conta-senha-confirma').value;
+      msg.style.color = 'var(--color-vermelho)';
+      if (nova.length < 6) { msg.textContent = 'A nova senha precisa de pelo menos 6 caracteres.'; return; }
+      if (nova !== confirma) { msg.textContent = 'A confirmação não confere com a nova senha.'; return; }
+      try {
+        const r = await authFetch('/api/auth/senha', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senha_atual: atual, senha_nova: nova }),
+        });
+        if (!r.ok) { msg.textContent = (await r.json()).erro || 'Falha ao trocar a senha.'; return; }
+        ['conta-senha-atual', 'conta-senha-nova', 'conta-senha-confirma'].forEach(id =>
+          document.getElementById(id).value = '');
+        msg.style.color = 'var(--color-verde)';
+        msg.textContent = 'Senha trocada.';
+        mostrarAviso('Sua senha foi trocada.');
+      } catch (e) { msg.textContent = 'Erro de conexão: ' + e.message; }
+    }
+
+    /** Admin: redefinição de senha de qualquer usuário. */
+    function abrirTrocaSenha(id, login) {
+      const d = document.getElementById('dialogo-senha');
+      d.dataset.usuarioId = id;
+      document.getElementById('senha-alvo-login').textContent = login;
+      document.getElementById('senha-alvo-nova').value = '';
+      document.getElementById('senha-alvo-msg').textContent = '';
+      d.showModal();
+    }
+
+    async function salvarSenhaAdmin() {
+      const d = document.getElementById('dialogo-senha');
+      const msg = document.getElementById('senha-alvo-msg');
+      const nova = document.getElementById('senha-alvo-nova').value;
+      if (nova.length < 6) { msg.textContent = 'A senha precisa de pelo menos 6 caracteres.'; return; }
+      const r = await authFetch('/api/usuarios/' + d.dataset.usuarioId, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senha: nova }),
+      });
+      if (!r.ok) { msg.textContent = (await r.json()).erro || 'Falha ao redefinir.'; return; }
+      d.close();
+      mostrarAviso('Senha de ' + document.getElementById('senha-alvo-login').textContent + ' redefinida.');
     }
 
     async function removerUsuario(id, login) {
@@ -331,13 +379,13 @@
     /* Diálogos do sistema (provisionamento e manual do dispositivo):
        mesmo estilo nos dois temas — sem isso, o navegador aplica o padrão
        (fundo branco, sem padding), ilegível no tema escuro */
-    #dialogo-provisionamento, #dialogo-manual {
+    #dialogo-provisionamento, #dialogo-manual, #dialogo-senha {
       background: var(--color-panel); color: var(--color-text);
       border: 1px solid var(--color-border); border-radius: 8px;
       padding: 24px 28px; max-width: 480px; width: calc(100% - 32px);
       max-height: 85vh; overflow-y: auto;
     }
-    #dialogo-provisionamento::backdrop, #dialogo-manual::backdrop {
+    #dialogo-provisionamento::backdrop, #dialogo-manual::backdrop, #dialogo-senha::backdrop {
       background: rgba(0, 0, 0, 0.55);
     }
     .prov-passos {
@@ -386,6 +434,7 @@
       letter-spacing: 0.05em; color: var(--color-sub);
       padding: 12px 14px; font-weight: 500;
       border-bottom: 1px solid var(--color-border);
+      text-align: left;   /* th é centralizado por padrão — alinha com as células */
     }
     .data-table tbody tr {
       border-bottom: 1px solid var(--color-border);
@@ -394,6 +443,7 @@
     .data-table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
     .data-table tbody td {
       padding: 10px 14px; font-size: 13px; color: var(--color-td);
+      vertical-align: middle;
     }
 
     /* Botões de navegação (abas) — Material tabs */
@@ -620,6 +670,22 @@
   <!-- ============================================================
        CONTEÚDO PRINCIPAL — 3 abas: Visão Geral, Dashboard, Histórico
   ============================================================ -->
+  <!-- Redefinição de senha pelo admin -->
+  <dialog id="dialogo-senha" aria-labelledby="senha-titulo">
+    <p id="senha-titulo" class="text-text text-sm font-medium mb-1">Definir nova senha</p>
+    <p class="text-sub text-xs mb-3">Usuário: <span id="senha-alvo-login" class="prov-code">—</span></p>
+    <input id="senha-alvo-nova" type="password" placeholder="nova senha (mín. 6)" autocomplete="new-password"
+           class="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text mb-2">
+    <p id="senha-alvo-msg" class="text-xs mb-3" style="min-height:14px; color:var(--color-vermelho);"></p>
+    <div class="flex justify-end gap-2">
+      <button onclick="document.getElementById('dialogo-senha').close()"
+              class="rounded-lg px-4 py-2 text-sm"
+              style="background:color-mix(in srgb, var(--color-text) 7%, transparent); color:var(--color-sub);">Cancelar</button>
+      <button onclick="salvarSenhaAdmin()" class="rounded-lg px-4 py-2 text-sm font-medium"
+              style="background:rgba(107,157,248,0.15); color:var(--color-accent);">Salvar</button>
+    </div>
+  </dialog>
+
   <!-- Manual do dispositivo: gravação, troca de sala/Wi-Fi e recuperação -->
   <dialog id="dialogo-manual" aria-labelledby="manual-titulo">
     <p id="manual-titulo" class="text-text text-sm font-medium mb-2">Manual do dispositivo (ESP32)</p>
@@ -783,7 +849,7 @@
       <div class="rounded-2xl border border-border px-3 py-4" style="background:var(--color-surface);">
         <div class="grid grid-cols-2 lg:grid-cols-4 lg:divide-x divide-border gap-y-4">
           <div class="px-4">
-            <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center justify-between mb-1" style="min-height:21px;">
               <div class="flex items-center gap-1.5 text-sub">
                 <i data-lucide="haze" class="w-3.5 h-3.5"></i>
                 <p class="text-xs uppercase tracking-wide">PM2.5</p>
@@ -795,7 +861,7 @@
             <p class="text-sub text-xs mt-1">partículas finas · ideal &lt;15 µg/m³</p>
           </div>
           <div class="px-4">
-            <div class="flex items-center justify-between mb-1">
+            <div class="flex items-center justify-between mb-1" style="min-height:21px;">
               <div class="flex items-center gap-1.5 text-sub">
                 <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
                 <p class="text-xs uppercase tracking-wide">Índice VOC</p>
@@ -807,7 +873,7 @@
             <p class="text-sub text-xs mt-1">compostos voláteis · ideal &lt;100</p>
           </div>
           <div class="px-4">
-            <div class="flex items-center gap-1.5 text-sub mb-1">
+            <div class="flex items-center gap-1.5 text-sub mb-1" style="min-height:21px;">
               <i data-lucide="cloud-fog" class="w-3.5 h-3.5"></i>
               <p class="text-xs uppercase tracking-wide">Índice NOx</p>
             </div>
@@ -815,7 +881,7 @@
             <p class="text-sub text-xs mt-1">óxidos de nitrogênio</p>
           </div>
           <div class="px-4">
-            <div class="flex items-center gap-1.5 text-sub mb-1">
+            <div class="flex items-center gap-1.5 text-sub mb-1" style="min-height:21px;">
               <i data-lucide="sun" class="w-3.5 h-3.5"></i>
               <p class="text-xs uppercase tracking-wide">Luminosidade</p>
             </div>
@@ -1014,7 +1080,24 @@
     ============================================================ -->
     <div id="tab-config" style="display:none;" class="animate-fade-in">
 
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+      <!-- MINHA CONTA — visível para todos os perfis -->
+      <div class="rounded-2xl border border-border p-6 elevation-2 mb-6" style="background:var(--color-panel); max-width:560px;">
+        <p class="text-text text-sm font-medium mb-1">Minha conta</p>
+        <p class="text-sub text-xs mb-4">Troque a sua senha (mínimo de 6 caracteres).</p>
+        <div class="flex flex-wrap gap-2">
+          <input id="conta-senha-atual" type="password" placeholder="senha atual" autocomplete="current-password"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:140px;">
+          <input id="conta-senha-nova" type="password" placeholder="nova senha" autocomplete="new-password"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:140px;">
+          <input id="conta-senha-confirma" type="password" placeholder="repetir a nova" autocomplete="new-password"
+                 class="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text" style="width:140px;">
+          <button onclick="trocarMinhaSenha()" class="rounded-lg px-4 py-2 text-sm font-medium"
+                  style="background:rgba(107,157,248,0.15); color:var(--color-accent);">Trocar senha</button>
+        </div>
+        <p id="conta-senha-msg" aria-live="polite" class="text-xs mt-2" style="min-height:16px;"></p>
+      </div>
+
+      <div id="cfg-admin-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
 
         <!-- SALAS -->
         <div class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
@@ -1059,8 +1142,8 @@
         </div>
       </div>
 
-      <!-- USUÁRIOS -->
-      <div class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
+      <!-- USUÁRIOS (somente admin) -->
+      <div id="cfg-card-usuarios" class="rounded-2xl border border-border p-6 elevation-2" style="background:var(--color-panel);">
         <p class="text-text text-sm font-medium mb-1">Usuários do portal</p>
         <p class="text-sub text-xs mb-4">Perfis: <strong>visualizacao</strong> (só vê) · <strong>analise</strong> (vê + baixa CSV) · <strong>admin</strong> (tudo).</p>
         <div class="flex flex-wrap gap-2 mb-4">
@@ -1889,8 +1972,10 @@
       const chip = document.getElementById('user-chip');
       chip.textContent = AUTH.nome;
       chip.title = 'Perfil: ' + AUTH.perfil;
-      document.getElementById('btn-config').style.display =
-        AUTH.perfil === 'admin' ? '' : 'none';
+      document.getElementById('btn-config').style.display = '';
+      const ehAdmin = AUTH.perfil === 'admin';
+      document.getElementById('cfg-admin-grid').style.display = ehAdmin ? '' : 'none';
+      document.getElementById('cfg-card-usuarios').style.display = ehAdmin ? '' : 'none';
       document.getElementById('btn-csv').style.display =
         nivelPerfil(AUTH.perfil) >= 2 ? '' : 'none';
     }

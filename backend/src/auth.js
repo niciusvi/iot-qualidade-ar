@@ -66,6 +66,21 @@ export async function login(usuario, senha) {
 }
 
 /**
+ * Troca a senha do próprio usuário, exigindo a senha atual correta.
+ * Retorna true se trocou; false se a senha atual não confere.
+ */
+export async function trocarSenhaPropria(idUsuario, senhaAtual, senhaNova) {
+  const { rows } = await pool.query(
+    'SELECT senha_hash FROM usuarios WHERE id = $1 AND ativo', [idUsuario]
+  );
+  const u = rows[0];
+  if (!u || !bcrypt.compareSync(String(senhaAtual || ''), u.senha_hash)) return false;
+  await pool.query('UPDATE usuarios SET senha_hash = $2 WHERE id = $1',
+    [idUsuario, hashSenha(senhaNova)]);
+  return true;
+}
+
+/**
  * Middleware de proteção: exige login com perfil >= `minimo`.
  * Uso: app.get('/api/x', exigirPerfil('analise'), handler)
  */
