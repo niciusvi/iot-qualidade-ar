@@ -618,6 +618,7 @@ app.get('/api/salas/:id(\\d+)/firmware', exigirPerfil('admin'), async (req, res,
     const fonte = await readFile(new URL('../esp32/esp32_air_quality.ino', import.meta.url), 'utf8');
     const urlPublica = process.env.PUBLIC_BACKEND_URL || '';
     let custom = fonte
+      .replace('bool MODO_SIMULACAO = true;', 'bool MODO_SIMULACAO = false;')
       .replace('const int   SALA_COMPILADA = 0;', `const int   SALA_COMPILADA = ${id};`)
       .replace('const char* TOKEN_COMPILADO = "";', `const char* TOKEN_COMPILADO = "${token}";`)
       .replace('const char* BACKEND_COMPILADO = "";',

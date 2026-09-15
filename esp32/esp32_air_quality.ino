@@ -796,8 +796,11 @@ void setup() {
     cfgBackendUrl = BACKEND_COMPILADO;
     cfgCfId = CF_ID_COMPILADO;
     cfgCfSecret = CF_SECRET_COMPILADO;
-    MODO_SIMULACAO = false;
-    Serial.printf("[PROV] Provisionamento embutido no firmware: Sala %d\n", SALA_COMPILADA);
+    // O flag MODO_SIMULACAO é respeitado como está escrito no arquivo:
+    // o portal gera com false (produção); troque para true antes de gravar
+    // se quiser simular usando o mesmo backend/token embutidos.
+    Serial.printf("[PROV] Provisionamento embutido no firmware: Sala %d (%s)\n",
+      SALA_COMPILADA, MODO_SIMULACAO ? "modo simulação" : "modo produção");
   } else {
     Serial.println("[PROV] Sem provisionamento — usando configuração genérica do código.");
   }
