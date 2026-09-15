@@ -889,7 +889,7 @@ void setup() {
  *   1. server.handleClient() — Mantém o painel web local funcionando
  *   2. TAREFA 1 — Leitura dos sensores (a cada 30s)
  *   3. TAREFA 2 — Envio para o backend (a cada 30s)
- *      - Simulação: loop de 1 a 10, gera dados + POST para cada sala
+ *      - Simulação: percorre as salas simuladas, gera dados + POST para cada uma
  *      - Produção: lê sensores reais + POST apenas para SALA_PERTENCENTE
  *   4. TAREFA 3 — Salvar no histórico local (a cada 5 minutos)
  *
@@ -935,7 +935,7 @@ void loop() {
   // --------------------------------------------------------------------------
   // TAREFA 2: Enviar para Nuvem (backend) a cada 30 segundos
   //
-  // MODO SIMULAÇÃO (Master Simulator):
+  // MODO SIMULAÇÃO (gerador da escola):
   //   O ESP32 percorre as salas simuladas gerando dados diferentes
   //   para cada uma e enviando um POST por sala.
   //   Isso permite testar o portal inteiro com um único ESP32.
@@ -957,7 +957,7 @@ void loop() {
       if (MODO_SIMULACAO) {
         /**
          * =============================
-         * MODO SIMULAÇÃO — 10 SALAS
+         * MODO SIMULAÇÃO — TODAS AS SALAS
          * =============================
          *
          * Loop por todas as salas simuladas:
