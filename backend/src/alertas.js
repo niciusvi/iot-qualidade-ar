@@ -131,7 +131,7 @@ export async function enviarTextoPara(numero, texto) {
           : { 'Content-Type': 'application/json', apikey: EVOLUTION_API_KEY },
         body: usaGateway
           ? JSON.stringify({ numero, texto })          // contrato do gateway n8n
-          : JSON.stringify({ number: numero, text: texto }), // contrato da Evolution
+          : JSON.stringify({ number: numero, text: texto, delay: 3000 }), // contrato da Evolution (delay = presença "digitando", melhora a entrega)
         signal: controller.signal,
       }
     );
@@ -159,7 +159,11 @@ export async function enviarWhatsApp(texto) {
     return resultado;
   }
 
-  for (const d of destinatarios) {
+  for (let i = 0; i < destinatarios.length; i++) {
+    // Pausa entre destinatários: rajada instantânea é padrão de robô para o
+    // anti-spam do WhatsApp (mensagem fica no 1 check e não chega).
+    if (i > 0) await new Promise((r) => setTimeout(r, 2000));
+    const d = destinatarios[i];
     const r = await enviarTextoPara(d.numero, texto);
     if (r.ok) resultado.enviados.push(d.numero);
     else resultado.erros.push(`${d.numero}: ${r.erro}`);
