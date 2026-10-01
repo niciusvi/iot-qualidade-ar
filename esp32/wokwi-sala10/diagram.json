@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "author": "School Air - PI VI Univesp",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "chip-scd4x", "id": "scd4x", "top": 20, "left": 240, "attrs": {} },
+    { "type": "chip-sen5x", "id": "sen5x", "top": 130, "left": 240, "attrs": {} },
+    { "type": "wokwi-photoresistor-sensor", "id": "ldr", "top": 30, "left": -270, "attrs": { "lux": "500" } },
+    { "type": "wokwi-text", "id": "titulo", "top": -110, "left": -270, "attrs": { "text": "School Air - Sala 10 (simulacao Wokwi)" } },
+    { "type": "wokwi-text", "id": "rotulo_esp", "top": -50, "left": 0, "attrs": { "text": "ESP32 DevKit" } },
+    { "type": "wokwi-text", "id": "rotulo_scd4x", "top": -5, "left": 240, "attrs": { "text": "SCD4x: CO2, temperatura, umidade (I2C 0x62)" } },
+    { "type": "wokwi-text", "id": "rotulo_sen5x", "top": 105, "left": 240, "attrs": { "text": "SEN5x: PM1/2.5/4/10, VOC, NOx (I2C 0x69)" } },
+    { "type": "wokwi-text", "id": "rotulo_ldr", "top": 5, "left": -270, "attrs": { "text": "LDR: luminosidade (AO no GPIO 34)" } },
+    { "type": "wokwi-text", "id": "legenda_1", "top": 260, "left": -270, "attrs": { "text": "Fios: vermelho = 3V3 | laranja = 5V | preto = GND" } },
+    { "type": "wokwi-text", "id": "legenda_2", "top": 285, "left": -270, "attrs": { "text": "azul = SDA (GPIO 21) | amarelo = SCL (GPIO 22) | verde = AO (GPIO 34)" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:3V3", "scd4x:VCC", "red", [ "h-15", "v-50", "h245", "v50" ] ],
+    [ "esp:GND.2", "scd4x:GND", "black", [ "h40", "v9" ] ],
+    [ "esp:22", "scd4x:SCL", "gold", [ "h55", "v0" ] ],
+    [ "esp:21", "scd4x:SDA", "blue", [ "h70", "v-20" ] ],
+    [ "esp:5V", "sen5x:VCC", "orange", [ "h-15", "v25", "h245", "v-88" ] ],
+    [ "esp:GND.3", "sen5x:GND", "black", [ "h40", "v62" ] ],
+    [ "sen5x:SEL", "sen5x:GND", "black", [ "h-12", "v-29" ] ],
+    [ "sen5x:SCL", "scd4x:SCL", "gold", [ "h-20", "v-110" ] ],
+    [ "sen5x:SDA", "scd4x:SDA", "blue", [ "h-28", "v-110" ] ],
+    [ "ldr:VCC", "esp:3V3", "red", [ "h40", "v-17" ] ],
+    [ "ldr:GND", "esp:GND.1", "black", [ "h30", "v98" ] ],
+    [ "ldr:AO", "esp:34", "green", [ "h60", "v-9" ] ]
+  ],
+  "dependencies": {}
+}

@@ -1,5 +1,6 @@
 node_modules/
 .env
+esp32/wokwi-sala10/segredos.h
 *.log
 .impeccable/
 docs/TCC-MUDANCAS.md

@@ -1,0 +1,6 @@
+# Bibliotecas que o Wokwi instala antes de compilar o sketch.
+# Sem versão fixada de propósito: o Library Manager do Wokwi reescreve este
+# arquivo sem a versão, e o sketch já usa a API da versão atual do SCD4x (1.x).
+Sensirion Core
+Sensirion I2C SCD4x
+Sensirion I2C SEN5X

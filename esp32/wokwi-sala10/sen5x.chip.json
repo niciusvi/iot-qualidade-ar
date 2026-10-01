@@ -1,0 +1,10 @@
+{
+  "name": "SEN5x",
+  "author": "School Air - PI VI Univesp",
+  "pins": ["VCC", "GND", "SCL", "SDA", "SEL", "", "", "", "", ""],
+  "controls": [
+    { "id": "pm25", "label": "PM2.5 (ug/m3)", "type": "range", "min": 0, "max": 150, "step": 1 },
+    { "id": "voc", "label": "VOC (indice)", "type": "range", "min": 1, "max": 500, "step": 1 },
+    { "id": "nox", "label": "NOx (indice)", "type": "range", "min": 1, "max": 500, "step": 1 }
+  ]
+}
