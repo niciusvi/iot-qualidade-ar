@@ -35,6 +35,7 @@
  * alertas.destinatarios/erro_envio e aparece na aba Incidentes.
  */
 import { pool } from './db.js';
+import { FilaDeEventosDeAlerta, criarAgendadorDeDescargas } from './filaAlertas.js';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://evolution:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -52,6 +53,11 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || '';
 
 const COOLDOWN_MIN = 30;        // 1 alerta a cada 30 min por sala/parâmetro/nível
 const GAP_MAX_SEG = 180;        // intervalo > 3 min entre leituras quebra a "sequência ruim"
+// Texto gravado em alertas.erro_envio enquanto o aviso ainda não saiu.
+const MARCA_NA_FILA = 'na fila de envio';
+// O gateway n8n agora só responde DEPOIS da Evolution (que simula "digitando"
+// por 3 s). Com 10 s, um envio lento era dado como falho e saía em dobro.
+const TEMPO_LIMITE_ENVIO_MS = 20000;
 
 // Consolidação (pisos de segurança: crítica nunca abaixo de 5 s, digest de 60 s)
 const CRITICO_SEG = Math.max(5, Number(process.env.ALERTA_CRITICO_SEGUNDOS) || 20);
@@ -119,7 +125,7 @@ export async function enviarTextoPara(numero, texto) {
   }
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), TEMPO_LIMITE_ENVIO_MS);
     const resp = await fetch(
       usaGateway
         ? N8N_WEBHOOK_URL
@@ -171,17 +177,13 @@ export async function enviarWhatsApp(texto) {
   return resultado;
 }
 
-/**
- * Filas de consolidação: chave sala:parametro:nivel:tipo → evento mais
- * recente (Map deduplica sozinho; o tamanho é limitado por salas × regras).
- */
-const filaDigest = new Map();
-const filaCritica = new Map();
+/** Só o CO₂ crítico tem pressa (≤ 1 min); todo o resto vai no digest. */
+function ehEventoDaFilaCritica(evento) {
+  return evento.tipo === 'alerta' && evento.parametro === 'co2' && evento.nivel === 'critico';
+}
 
 function enfileirarEvento(evento) {
-  const fila = (evento.tipo === 'alerta' && evento.parametro === 'co2' && evento.nivel === 'critico')
-    ? filaCritica : filaDigest;
-  fila.set(`${evento.sala}:${evento.parametro}:${evento.nivel}:${evento.tipo}`, evento);
+  (ehEventoDaFilaCritica(evento) ? filaCritica : filaDigest).enfileirar(evento);
 }
 
 function linhaEvento(e) {
@@ -214,37 +216,78 @@ export function montarMensagem(eventos, ehCritica) {
 }
 
 /**
- * Descarrega uma fila numa ÚNICA mensagem para todos os destinatários.
- * Sucesso parcial conta como entregue (alguém foi avisado); se TODOS
- * falharem, a fila fica intacta e a próxima rodada tenta de novo.
+ * Grava nos incidentes quem recebeu e o que falhou (aba Incidentes do painel).
+ * Se TODOS os envios falharam, a fila é mantida e a próxima rodada tenta de novo.
  */
-async function descarregarFila(fila, ehCritica) {
-  if (fila.size === 0) return;
-  const eventos = [...fila.values()];
-  const envio = await enviarWhatsApp(montarMensagem(eventos, ehCritica));
-  const ids = eventos.filter((e) => e.alertaId).map((e) => e.alertaId);
-  if (ids.length) {
-    await pool.query(
-      'UPDATE alertas SET destinatarios = $2, erro_envio = $3 WHERE id = ANY($1)',
-      [ids, envio.enviados.join(',') || null, envio.erros.join(' | ') || null]
-    );
-  }
-  if (envio.enviados.length > 0) fila.clear();
-  else console.warn('[alertas] fila mantida para retry:', envio.erros.join(' | '));
+async function gravarResultadoNosAlertas(idsDosAlertas, envio) {
+  await pool.query(
+    'UPDATE alertas SET destinatarios = $2, erro_envio = $3 WHERE id = ANY($1)',
+    [idsDosAlertas, envio.enviados.join(',') || null, envio.erros.join(' | ') || null]
+  );
+  if (envio.enviados.length === 0) console.warn('[alertas] fila mantida para retry:', envio.erros.join(' | '));
 }
 
-let descarregando = false;
-async function rodarFila(fila, ehCritica) {
-  if (descarregando) return;   // serializa os flushes (envio pode levar >20 s)
-  descarregando = true;
-  try { await descarregarFila(fila, ehCritica); }
-  catch (err) { console.error('[alertas] descarga falhou:', err.message); }
-  finally { descarregando = false; }
+/**
+ * Filas de consolidação: chave sala:parametro:nivel:tipo → evento mais
+ * recente (a lógica de descarga e o porquê dela estão em filaAlertas.js).
+ */
+function criarFilaDeAlertas(ehCritica) {
+  return new FilaDeEventosDeAlerta({
+    ehCritica,
+    montarTextoDaMensagem: montarMensagem,
+    enviarParaDestinatarios: enviarWhatsApp,
+    registrarResultadoDoEnvio: gravarResultadoNosAlertas,
+  });
 }
+const filaDigest = criarFilaDeAlertas(false);
+const filaCritica = criarFilaDeAlertas(true);
+
+// serializa os flushes (envio pode levar >20 s)
+const agendarDescarga = criarAgendadorDeDescargas((mensagem) => console.error(mensagem));
 
 // unref(): os timers não seguram o processo vivo em scripts e testes
-setInterval(() => rodarFila(filaCritica, true), CRITICO_SEG * 1000).unref();
-setInterval(() => rodarFila(filaDigest, false), DIGEST_SEG * 1000).unref();
+setInterval(() => agendarDescarga(filaCritica), CRITICO_SEG * 1000).unref();
+setInterval(() => agendarDescarga(filaDigest), DIGEST_SEG * 1000).unref();
+
+/**
+ * Monta o evento de fila a partir de uma linha da tabela `alertas`.
+ * Devolve null se a regra daquele parâmetro/nível não existe mais.
+ */
+function eventoDeAlertaPendente(linha) {
+  const regra = REGRAS.find((r) => r.parametro === linha.parametro && r.nivel === linha.nivel);
+  if (!regra) return null;
+  return {
+    tipo: 'alerta', alertaId: linha.id, sala: linha.sala, salaNome: linha.sala_nome,
+    parametro: regra.parametro, nivel: regra.nivel, valor: linha.valor,
+    unidade: regra.unidade, limiteDesc: regra.limiteDesc,
+    minutos: regra.janelaMin + Math.round(linha.minutos_na_fila),
+  };
+}
+
+/**
+ * Recoloca na fila os alertas que estavam aguardando envio quando o processo
+ * caiu. As filas vivem só na memória: sem isto, todo restart/redeploy do
+ * container apagava os avisos pendentes e eles ficavam para sempre como
+ * "na fila de envio" na aba Incidentes. Só os últimos 30 min — avisar de algo
+ * mais antigo que isso confundiria mais do que ajudaria.
+ * Chamar UMA vez, na subida do servidor. Retorna quantos voltaram para a fila.
+ *
+ * Exemplo de uso:
+ *   const recolocados = await reenfileirarAlertasPendentes();
+ */
+export async function reenfileirarAlertasPendentes() {
+  const { rows: pendentes } = await pool.query(
+    `SELECT a.id::int AS id, a.sala, s.nome AS sala_nome, a.parametro, a.nivel, a.valor,
+            EXTRACT(EPOCH FROM (now() - a.enviado_em)) / 60 AS minutos_na_fila
+     FROM alertas a JOIN salas s ON s.id = a.sala
+     WHERE a.erro_envio = $1 AND a.normalizado_em IS NULL
+       AND a.enviado_em > now() - ($2 || ' minutes')::interval`,
+    [MARCA_NA_FILA, COOLDOWN_MIN]
+  );
+  const eventos = pendentes.map(eventoDeAlertaPendente).filter(Boolean);
+  eventos.forEach(enfileirarEvento);
+  return eventos.length;
+}
 
 /** Duração (ms) da sequência ininterrupta de leituras ruins terminando na mais recente. */
 function duracaoStreak(leituras, regra) {
@@ -337,9 +380,9 @@ export async function avaliarAlertas(sala) {
       // atualiza destinatarios/erro_envio deste id (Incidentes fica fiel).
       const { rows: criado } = await pool.query(
         `INSERT INTO alertas (sala, parametro, nivel, valor, limite, mensagem, destinatarios, erro_envio)
-         VALUES ($1, $2, $3, $4, $5, $6, NULL, 'na fila de envio')
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
          RETURNING id::int AS id`,
-        [sala, regra.parametro, regra.nivel, valor, regra.limiteDesc, mensagem]
+        [sala, regra.parametro, regra.nivel, valor, regra.limiteDesc, mensagem, MARCA_NA_FILA]
       );
       enfileirarEvento({
         tipo: 'alerta', alertaId: criado[0].id, sala, salaNome,

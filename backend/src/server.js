@@ -20,7 +20,7 @@
  */
 import express from 'express';
 import { pool, initDb, RETENCAO_DIAS } from './db.js';
-import { avaliarAlertas } from './alertas.js';
+import { avaliarAlertas, reenfileirarAlertasPendentes } from './alertas.js';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { login, exigirPerfil, seedAdmin, hashSenha, trocarSenhaPropria } from './auth.js';
@@ -794,6 +794,9 @@ process.on('SIGINT', encerrar);
 initDb()
   .then(async () => {
     await seedAdmin();
+    // As filas de aviso vivem na memória: recupera o que ficou pendente no restart.
+    const recolocados = await reenfileirarAlertasPendentes();
+    if (recolocados > 0) console.log(`[alertas] ${recolocados} alerta(s) pendente(s) recolocado(s) na fila.`);
     jobRetencao();
     setInterval(jobAgregacao, 10 * 60 * 1000);
     setInterval(jobRetencao, 24 * 3600 * 1000);
