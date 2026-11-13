@@ -72,11 +72,31 @@
     const btnMini = (rotulo, cor, fn) =>
       `<button onclick="${fn}" class="rounded px-2 py-1" style="background:rgba(${cor},0.12); color:rgb(${cor}); font-size:11px; white-space:nowrap;">${rotulo}</button>`;
 
+    // Nomes das salas da tabela, por id: o botão "excluir" passa só o id no
+    // onclick (um nome com aspas, tipo Sala d'Água, quebraria o HTML).
+    let nomesDasSalasDaConfig = {};
+
     function renderCfgSalas(salas) {
+      nomesDasSalasDaConfig = Object.fromEntries(salas.map(s => [s.id, s.nome]));
       document.getElementById('cfg-salas-body').innerHTML = salas.map(s => `<tr>
         <td>${s.id}</td><td>${s.nome}</td><td>${chipAtivo(s.ativa)}</td>
-        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '107,157,248', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', '107,157,248', `alternarSala(${s.id}, ${!s.ativa})`)}</div></td>
+        <td><div class="flex flex-wrap gap-1.5">${btnMini('provisionamento', '107,157,248', `baixarProvisionamento(${s.id})`)}${btnMini(s.ativa ? 'desativar' : 'reativar', '107,157,248', `alternarSala(${s.id}, ${!s.ativa})`)}${btnMini('excluir', '224,92,92', `excluirSala(${s.id})`)}</div></td>
       </tr>`).join('') || '<tr><td colspan="4" class="text-center py-6 text-sub text-sm">Nenhuma sala.</td></tr>';
+    }
+
+    /**
+     * Exclui a sala e todo o histórico dela (definitivo). Pede confirmação
+     * porque não há como desfazer; "desativar" é a opção que guarda os dados.
+     */
+    async function excluirSala(id) {
+      const nome = nomesDasSalasDaConfig[id] || ('Sala ' + id);
+      const confirmou = confirm(`Excluir "${nome}"?\n\nTodas as leituras, médias e incidentes dessa sala serão APAGADOS e não há como desfazer.\n\nPara só esconder a sala e manter os dados, use "desativar".`);
+      if (!confirmou) return;
+      const r = await authFetch('/api/salas/' + id, { method: 'DELETE' });
+      if (!r.ok) { alert((await r.json()).erro || 'Falha ao excluir a sala'); return; }
+      mostrarAviso(`"${nome}" excluída.`);
+      carregarConfig();
+      carregarSalas().then(() => { buildSalaSelector(); buildVisaoGeral(); buildHistoricoControls(); });
     }
 
     async function novaSala() {

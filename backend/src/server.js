@@ -21,6 +21,7 @@
 import express from 'express';
 import { pool, initDb, RETENCAO_DIAS } from './db.js';
 import { avaliarAlertas, reenfileirarAlertasPendentes } from './alertas.js';
+import { excluirSalaComHistorico } from './exclusaoDeSala.js';
 import crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { login, exigirPerfil, seedAdmin, hashSenha, trocarSenhaPropria } from './auth.js';
@@ -565,6 +566,22 @@ app.put('/api/salas/:id(\\d+)', exigirPerfil('admin'), async (req, res, next) =>
     if (rows.length === 0) return res.status(404).json({ erro: 'Sala não encontrada' });
     res.json(rows[0]);
   } catch (err) { next(err); }
+});
+
+/**
+ * DELETE /api/salas/:id — exclui a sala e TODO o histórico dela (somente admin).
+ * É definitivo; para só esconder a sala existe o "desativar" (PUT acima).
+ */
+app.delete('/api/salas/:id(\\d+)', exigirPerfil('admin'), async (req, res, next) => {
+  const clienteDoBanco = await pool.connect().catch(next);
+  if (!clienteDoBanco) return;
+  try {
+    const resultado = await excluirSalaComHistorico(clienteDoBanco, Number(req.params.id));
+    if (!resultado.encontrada) return res.status(404).json({ erro: 'Sala não encontrada' });
+    console.log(`[salas] "${resultado.nome}" excluída por ${req.usuario.usuario} (${resultado.leiturasApagadas} leituras apagadas).`);
+    res.json({ ok: true, nome: resultado.nome, leituras_apagadas: resultado.leiturasApagadas });
+  } catch (err) { next(err); }
+  finally { clienteDoBanco.release(); }
 });
 
 /**
