@@ -12,6 +12,7 @@
  */
 import { pool } from './db.js';
 import { enviarWhatsApp } from './alertas.js';
+import { linhaDoPainel } from './linkPainel.js';
 
 const DASHBOARD_URL = process.env.DASHBOARD_URL || '';
 
@@ -65,7 +66,8 @@ export async function montarRelatorioSemanal() {
   linhas.push(pior
     ? `⚠️ Atenção especial: *${pior.nome}* concentrou o pior ar da semana.`
     : `✅ Nenhuma sala acumulou horas em nível crítico. Boa semana!`);
-  if (DASHBOARD_URL) linhas.push(`Painel: ${DASHBOARD_URL}`);
+  // Sem "https://": com o protocolo a mensagem não chegava (ver linkPainel.js).
+  if (linhaDoPainel(DASHBOARD_URL)) linhas.push(linhaDoPainel(DASHBOARD_URL));
 
   return linhas.join('\n');
 }

@@ -36,6 +36,7 @@
  */
 import { pool } from './db.js';
 import { FilaDeEventosDeAlerta, criarAgendadorDeDescargas } from './filaAlertas.js';
+import { linhaDoPainel } from './linkPainel.js';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://evolution:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
@@ -211,7 +212,8 @@ export function montarMensagem(eventos, ehCritica) {
       partes.push(...normalizados.map(linhaEvento));
     }
   }
-  if (DASHBOARD_URL) partes.push(`Painel: ${DASHBOARD_URL}`);
+  // Sem "https://": com o protocolo a mensagem não chegava (ver linkPainel.js).
+  if (linhaDoPainel(DASHBOARD_URL)) partes.push(linhaDoPainel(DASHBOARD_URL));
   return partes.join('\n');
 }
 
